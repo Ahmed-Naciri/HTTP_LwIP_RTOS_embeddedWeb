@@ -14,16 +14,10 @@ static modbusMasterRequest [8];
 static modbusMasterResponse[MODBUS_MAX_RESPONSE_LENGHT];
 static modbusMasterStatus_t modbusMasterStatus = MODBUS_MASTER_IDEL;
 static modbusExpectedResponseLength = 0;
+static modbusLastRegisterValue = 0;
 
 extern UART_HandleTypeDef huart3;
 
-void modbus_master_init(void)
-{
-	modbusMasterStatus = MODBUS_MASTER_IDEL;
-
-
-
-}
 
 static modbus_master_Crc16(uint8_t* frameBuffer, uint16_t frameLength)
 {
@@ -52,6 +46,17 @@ static modbus_master_Crc16(uint8_t* frameBuffer, uint16_t frameLength)
 	return crcValue;
 }
 
+
+
+void modbus_master_init(void)
+{
+	modbusMasterStatus = MODBUS_MASTER_IDEL;
+	modbusExpectedResponseLength=0;
+	modbusLastRegisterValue =0 ;
+
+
+
+}
 
 
 HAL_StatusTypeDef readHoldingRegister(uint8_t slaveAddress ,uint16_t firstRegister,uint16_t registerCount )
@@ -106,6 +111,31 @@ HAL_StatusTypeDef readHoldingRegister(uint8_t slaveAddress ,uint16_t firstRegist
 
 }
 
+
+modbusMasterStatus_t modbus_master_GetSate(void)
+{
+  return modbusMasterStatus;
+}
+
+
+
+HAL_StatusTypeDef modbus_master_GetLastRegisterValue(uint8_t* registerValue)
+{
+
+	if(registerValue = NULL)
+	{
+		return HAL_ERROR;
+	}
+	if(modbusMasterStatus != MODBUS_MASTER_RESPONSE_READY)
+	{
+		return HAL_ERROR;
+	}
+
+	*regsiterValue = modbusLastRegisterValue;
+
+	return HAL_OK;
+
+}
 
 
 
