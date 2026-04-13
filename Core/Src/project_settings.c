@@ -9,7 +9,7 @@
 
 static projectSettings_t projectSettings;
 
-void defaultValue_projectSettings(void)
+void ProjectSettings_defautValue(void)
 {
  projectSettings.baudrate = 9600;
  projectSettings.tempSlaveAddress = 1;
@@ -36,7 +36,7 @@ void defaultValue_projectSettings(void)
 
 }
 
-projectSettings_t* get_projectSettings(void)
+projectSettings_t* projectSettings_get(void)
 {
    return &projectSettings;
 }

@@ -8,6 +8,7 @@
 #ifndef INC_APPLICATION_TEMPERATURE_MONITOR_H_
 #define INC_APPLICATION_TEMPERATURE_MONITOR_H_
 
+#include "main.h"
 typedef struct
 {
    uint16_t rawTemp;

@@ -26,8 +26,8 @@ typedef struct
 
 }projectSettings_t;
 
-void defautValue_ProjectSettings(void);
-projectSettings_t* get_projectSettings(void);
+void ProjectSettings_defautValue(void);
+projectSettings_t* projectSettings_get(void);
 
 
 

@@ -1,4 +1,8 @@
+"./Core/Src/application_temperature_monitor.o"
 "./Core/Src/main.o"
+"./Core/Src/modbus_rtu_master.o"
+"./Core/Src/project_settings.o"
+"./Core/Src/rs485_interface.o"
 "./Core/Src/stm32f4xx_hal_msp.o"
 "./Core/Src/stm32f4xx_it.o"
 "./Core/Src/syscalls.o"

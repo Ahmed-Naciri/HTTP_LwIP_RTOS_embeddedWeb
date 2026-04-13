@@ -1,0 +1,6 @@
+../Core/Src/modbus_rtu_master.c:22:17:modbusMaster_Crc16	4
+../Core/Src/modbus_rtu_master.c:51:6:modbusMaster_init	1
+../Core/Src/modbus_rtu_master.c:63:19:modbusMaster_readHoldingRegister	6
+../Core/Src/modbus_rtu_master.c:119:22:modbusMaster_GetState	1
+../Core/Src/modbus_rtu_master.c:126:19:modbusMaster_GetLastRegisterValue	3
+../Core/Src/modbus_rtu_master.c:145:6:modbusMaster_cpltCallBack	4

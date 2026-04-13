@@ -1,0 +1,5 @@
+../Core/Src/rs485_interface.c:12:6:rs485_interface_init	1
+../Core/Src/rs485_interface.c:17:6:rs485_interface_enableTxMode	1
+../Core/Src/rs485_interface.c:24:6:rs485_interface_enableRxMode	1
+../Core/Src/rs485_interface.c:29:19:rs485_interface_send	1
+../Core/Src/rs485_interface.c:37:19:rs485_interface_receive	1

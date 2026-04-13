@@ -1,0 +1,2 @@
+../Core/Src/project_settings.c:12:6:ProjectSettings_defautValue	1
+../Core/Src/project_settings.c:39:20:projectSettings_get	1

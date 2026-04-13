@@ -18,6 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "project_settings.h"
+#include "rs485_interface.h"
+#include "modbus_rtu_master.h"
+#include "application_temperature_monitor.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -59,7 +63,13 @@ static void MX_USART3_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint8_t buffer[] = "hello\n";
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	 modbusMaster_cpltCallBack(huart);
+
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -79,6 +89,10 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  ProjectSettings_defautValue();
+  rs485_interface_init();
+  modbusMaster_init();
+  temperature_monitor_init();
 
   /* USER CODE END Init */
 
@@ -94,7 +108,7 @@ int main(void)
   MX_DMA_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  //uint8_t testFrame[8] = {0x01,0x03,0x00,0x00,0x00,0x01,0x84,0x0A};
 
   /* USER CODE END 2 */
 
@@ -102,12 +116,25 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+//	      HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
+//
+//	      HAL_UART_Transmit(&huart3, testFrame, 8, 1000);
+//
+//	      HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET);
+//
+//	      HAL_Delay(1000);
+
     /* USER CODE END WHILE */
 //	         HAL_GPIO_TogglePin(GPIOF, GPIO_PIN_12);
 //		     HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
 //		     //HAL_UART_Transmit(&huart3, buffer, 7, 1000);
 //		     HAL_UART_Transmit_DMA(&huart3, buffer, 7);
-//		     HAL_Delay(1000);
+
+//
+	   temperature_monitor_task();
+	   HAL_Delay(500);
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */

@@ -1,0 +1,3 @@
+../Core/Src/application_temperature_monitor.c:14:6:temperature_monitor_init	1
+../Core/Src/application_temperature_monitor.c:23:6:temperature_monitor_task	7
+../Core/Src/application_temperature_monitor.c:59:20:temperature_monitor_getData	1

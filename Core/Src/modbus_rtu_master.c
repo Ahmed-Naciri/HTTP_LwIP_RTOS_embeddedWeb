@@ -10,16 +10,16 @@
 #include "modbus_rtu_master.h"
 #include <string.h>
 
-static modbusMasterRequest [8];
-static modbusMasterResponse[MODBUS_MAX_RESPONSE_LENGHT];
-static modbusMasterStatus_t modbusMasterStatus = MODBUS_MASTER_IDEL;
-static modbusExpectedResponseLength = 0;
-static modbusLastRegisterValue = 0;
+static uint8_t modbusMasterRequest [8];
+static uint8_t modbusMasterResponse[MODBUS_MAX_RESPONSE_LENGHT];
+static modbusMasterStatus_t modbusMasterStatus = MODBUS_MASTER_IDLE;
+static uint16_t modbusExpectedResponseLength = 0;
+static uint16_t modbusLastRegisterValue = 0;
 
 extern UART_HandleTypeDef huart3;
 
 
-static modbus_master_Crc16(uint8_t* frameBuffer, uint16_t frameLength)
+static uint16_t modbusMaster_Crc16(uint8_t* frameBuffer, uint16_t frameLength)
 {
 
 	uint16_t crcValue=0xFFFF;
@@ -48,18 +48,19 @@ static modbus_master_Crc16(uint8_t* frameBuffer, uint16_t frameLength)
 
 
 
-void modbus_master_init(void)
+void modbusMaster_init(void)
 {
-	modbusMasterStatus = MODBUS_MASTER_IDEL;
+	modbusMasterStatus = MODBUS_MASTER_IDLE;
 	modbusExpectedResponseLength=0;
 	modbusLastRegisterValue =0 ;
 
-
+	memset(modbusMasterRequest,0,sizeof(modbusMasterRequest));
+	memset(modbusMasterResponse,0,sizeof(modbusMasterResponse));
 
 }
 
 
-HAL_StatusTypeDef readHoldingRegister(uint8_t slaveAddress ,uint16_t firstRegister,uint16_t registerCount )
+HAL_StatusTypeDef modbusMaster_readHoldingRegister(uint8_t slaveAddress ,uint16_t firstRegister,uint16_t registerCount )
 {
 
 	uint16_t crcValue;
@@ -87,20 +88,21 @@ HAL_StatusTypeDef readHoldingRegister(uint8_t slaveAddress ,uint16_t firstRegist
     modbusMasterRequest[4] = (registerCount >> 8) & 0xff;
     modbusMasterRequest[5] = registerCount & 0xff;
 
-    crcValue = modbus_master_Crc16( modbusMasterRequest, 6);
+    crcValue = modbusMaster_Crc16( modbusMasterRequest, 6);
     modbusMasterRequest[6] =  crcValue & 0xff;
     modbusMasterRequest[7] = (crcValue >> 8) & 0xff;
 
     modbusExpectedResponseLength=5+ (2*registerCount);
 
 
-    memset(modbusResponseFrame,0,sizeof(modbusResponseFrame));
+    memset(modbusMasterResponse,0,sizeof(modbusMasterResponse));
 
     if(rs485_interface_send( modbusMasterRequest,  8)!= HAL_OK)
     {
     	modbusMasterStatus = MODBUS_MASTER_ERROR;
     	return HAL_ERROR;
     }
+
     if(rs485_interface_receive(modbusMasterResponse, modbusExpectedResponseLength) !=HAL_OK)
     {
     	modbusMasterStatus = MODBUS_MASTER_ERROR;
@@ -109,20 +111,22 @@ HAL_StatusTypeDef readHoldingRegister(uint8_t slaveAddress ,uint16_t firstRegist
 
     modbusMasterStatus = MODBUS_MASTER_WAITING_RESPONSE;
 
+    return HAL_OK;
+
 }
 
 
-modbusMasterStatus_t modbus_master_GetSate(void)
+modbusMasterStatus_t modbusMaster_GetState(void)
 {
   return modbusMasterStatus;
 }
 
 
 
-HAL_StatusTypeDef modbus_master_GetLastRegisterValue(uint8_t* registerValue)
+HAL_StatusTypeDef modbusMaster_GetLastRegisterValue(uint8_t* registerValue)
 {
 
-	if(registerValue = NULL)
+	if(registerValue == NULL)
 	{
 		return HAL_ERROR;
 	}
@@ -131,12 +135,42 @@ HAL_StatusTypeDef modbus_master_GetLastRegisterValue(uint8_t* registerValue)
 		return HAL_ERROR;
 	}
 
-	*regsiterValue = modbusLastRegisterValue;
+	*registerValue = modbusLastRegisterValue;
+	modbusMasterStatus = MODBUS_MASTER_IDLE;
 
 	return HAL_OK;
 
 }
 
+void modbusMaster_cpltCallBack(UART_HandleTypeDef* huart)
+{
+  uint16_t calculatedCrc;
+  uint16_t receivedCrc;
+
+  if(huart -> Instance != USART3)
+  {
+	  return;
+  }
+
+  if(modbusMasterStatus != MODBUS_MASTER_WAITING_RESPONSE)
+  {
+      return;
+  }
+
+  calculatedCrc = modbusMaster_Crc16( modbusMasterResponse, modbusExpectedResponseLength - 2 );
+  receivedCrc = (uint16_t)modbusMasterResponse[modbusExpectedResponseLength - 2] | ((uint16_t)modbusMasterResponse[modbusExpectedResponseLength - 1]<<8);
+
+  if(calculatedCrc != receivedCrc)
+  {
+	  modbusMasterStatus = MODBUS_MASTER_ERROR;
+	  return;
+  }
+  modbusLastRegisterValue = ((uint16_t)modbusMasterResponse[3] << 8) | modbusMasterResponse[4];
+  modbusMasterStatus = MODBUS_MASTER_RESPONSE_READY;
+
+
+
+}
 
 
 
