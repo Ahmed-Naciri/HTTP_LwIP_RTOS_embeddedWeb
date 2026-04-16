@@ -12,6 +12,8 @@
 #define MAX_SLAVES 255
 #define MAX_REGISTERS_PER_SLAVE 1024
 
+#include <stdint.h>
+
 
 typedef enum
 {
@@ -41,7 +43,7 @@ typedef struct
 	uint8_t used;
 	uartPortId_t portId;
 	uint32_t baudRate;
-	uint8_t sotpBits;
+	uint8_t stopBits;
 	parityType_t parity;
 
 }portConfig_t;
@@ -53,6 +55,7 @@ typedef struct
 	uint16_t regAddress;
 	registerType_t registerType;
 	float lastValue;
+	uint8_t valid;
 
 }registerConfig_t;
 
@@ -64,7 +67,7 @@ typedef struct
 	uint8_t used;       //Indicates whether this entry is used
 	uint8_t slaveAddress; //between 1..247
 	uartPortId_t portId;
-	uint8_t registerCount; //Number of registers currently configured for this slave
+	uint16_t registerCount; //Number of registers currently configured for this slave
 	registerConfig_t registerConfig[MAX_REGISTERS_PER_SLAVE];
 
 }slaveConfig_t;
@@ -81,7 +84,7 @@ extern appDataBase_t appDb ;
 void appConfig_defaultInit(void);
 
 int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId);
-int appConfig_removeSlave(uint8_t slaveAddress);
+int appConfig_removeSlave(uint8_t slaveIndex);
 
 int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t registerType);
 int appConfig_removeRegister(uint8_t slaveIndex, uint16_t regAddress);

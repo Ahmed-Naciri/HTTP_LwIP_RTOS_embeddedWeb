@@ -47,7 +47,7 @@ int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId)
 	uint8_t i;
 	if(slaveAddress == 0 || slaveAddress > 255 )
 	{
-		return -1;
+		return -1; // invalid address
 	}
 
 	for(i = 0; i < MAX_SLAVES ; i++)
@@ -67,7 +67,7 @@ int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId)
 			appDb.slaveConfig[i].used = 1;
 			appDb.slaveConfig[i].slaveAddress = slaveAddress;
 			appDb.slaveConfig[i].portId = portId;
-			appDb.slaveConfig[i].registerCount = 0;//slave has 0 register in the moment of his creation
+			appDb.slaveConfig[i].registerCount = 0;//slave has 0 register in the moment of its creation
 
 			return i; // return the index of the created salve
 		}
@@ -92,7 +92,7 @@ int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t
 
 	if(slave->used == 0)
 	{
-		return -2;
+		return -2; //verify if the slave exists , to be exist it must be used(we can't create registers for a slave if the slave not exists,that why we should verify)
 	}
 
 	for(i = 0; i < MAX_REGISTERS_PER_SLAVE; i++)
@@ -100,7 +100,7 @@ int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t
 		if((slave->registerConfig[i].used == 1)&&
 		   (slave->registerConfig.regAddress == regAddress))
 		{
-			return -3;
+			return -3; // verify if a register of that salve  has the same regAddress and  is used
 		}
 	}
 
@@ -112,17 +112,36 @@ int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t
 			slave->registerConfig[i].regAddress = regAddress;
 			slave->registerConfig[i].registerType = registerType;
 			slave->registerConfig[i].lastValue = 0.0f;
+			slave->registerConfig[i].valid = 0;
 			slave->registerCount++;
-			return i;
+			return i; // return the register index if the creation success
 		}
 	}
 
-	return -4;
+	return -4; // if it is not one of the previous cases , it means that  the array is full
 
 }
 
 
+int appConfig_updatePort(uartPortId_t portId,uint32_t baudRate,uint8_t sotpBits,parityType_t parity)
+{
+	if(portId >= MAX_UART_PORTS)
+	{
+		return -1;
+	}
 
+	appDb.ports[portId].used = 1;
+	appDb.ports[portId].portId = portId;
+	appDb.ports[portId].baudRate = baudRate;
+	appDb.ports[portId].stopBits = sotpBits;
+	appDb.ports[portId].parity = parity;
+
+	return 0;
+
+
+
+
+}
 
 
 
