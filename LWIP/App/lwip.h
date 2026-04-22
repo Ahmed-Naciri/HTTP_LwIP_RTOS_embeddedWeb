@@ -33,6 +33,7 @@
 #include "lwip/dhcp.h"
 #include "lwip/netif.h"
 #include "lwip/timeouts.h"
+#include "lwip/ip_addr.h"
 #include "ethernetif.h"
 
 /* Includes for RTOS ---------------------------------------------------------*/
@@ -46,6 +47,10 @@
 
 /* Global Variables ----------------------------------------------------------*/
 extern ETH_HandleTypeDef heth;
+extern struct netif gnetif;
+extern ip4_addr_t ipaddr;
+extern ip4_addr_t netmask;
+extern ip4_addr_t gw;
 
 /* LWIP init function */
 void MX_LWIP_Init(void);

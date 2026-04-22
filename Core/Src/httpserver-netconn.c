@@ -18,6 +18,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "string.h"
 #include "httpserver-netconn.h"
+#include "network_config_http.h"
 #include "cmsis_os.h"
 
 #include <stdio.h>
@@ -29,6 +30,38 @@
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 u32_t nPageHits = 0;
+static char g_http_request_buffer[4096];
+
+static int parse_content_length(const char *request)
+{
+  const char *p;
+  int value = 0;
+
+  if (request == NULL)
+  {
+    return -1;
+  }
+
+  p = strstr(request, "Content-Length:");
+  if (p == NULL)
+  {
+    return -1;
+  }
+
+  p += 15;
+  while ((*p == ' ') || (*p == '\t'))
+  {
+    p++;
+  }
+
+  while ((*p >= '0') && (*p <= '9'))
+  {
+    value = (value * 10) + (int)(*p - '0');
+    p++;
+  }
+
+  return value;
+}
 
 /* Format of dynamic web page: the page header */
 static const char TEST_PAGE[] =
@@ -61,10 +94,16 @@ static const char TEST_PAGE_1[] =
   */
 static void http_server_serve(struct netconn *conn) 
 {
-  struct netbuf *inbuf;
+  struct netbuf *inbuf = NULL;
+  struct netbuf *nextbuf = NULL;
   err_t recv_err;
-  char* buf;
-  u16_t buflen;
+  u16_t total_len;
+  u16_t next_len;
+  u16_t copy_len;
+  u16_t body_len;
+  int content_len;
+  u16_t request_len;
+  char *body_start;
   
   /* Read the data from the port, blocking if nothing yet there. 
    We assume the request (the part we care about) is in one netbuf */
@@ -74,20 +113,69 @@ static void http_server_serve(struct netconn *conn)
   {
     if (netconn_err(conn) == ERR_OK) 
     {
-      netbuf_data(inbuf, (void**)&buf, &buflen);
+      total_len = netbuf_len(inbuf);
+      request_len = (total_len < (sizeof(g_http_request_buffer) - 1u)) ? total_len : (sizeof(g_http_request_buffer) - 1u);
+      (void)netbuf_copy(inbuf, g_http_request_buffer, request_len);
+      g_http_request_buffer[request_len] = '\0';
+
+      if ((request_len >= 17) && (strncmp(g_http_request_buffer, "POST /save_config", 17) == 0))
+      {
+        content_len = parse_content_length(g_http_request_buffer);
+        body_start = strstr(g_http_request_buffer, "\r\n\r\n");
+        body_len = 0u;
+        if (body_start != NULL)
+        {
+          body_len = (u16_t)(request_len - (u16_t)((body_start + 4) - g_http_request_buffer));
+        }
+
+        while ((content_len >= 0) && (body_start != NULL) && (body_len < (u16_t)content_len) && (request_len < (sizeof(g_http_request_buffer) - 1u)))
+        {
+          recv_err = netconn_recv(conn, &nextbuf);
+          if ((recv_err != ERR_OK) || (nextbuf == NULL))
+          {
+            break;
+          }
+
+          next_len = netbuf_len(nextbuf);
+          copy_len = ((u16_t)(sizeof(g_http_request_buffer) - 1u - request_len) < next_len)
+                     ? (u16_t)(sizeof(g_http_request_buffer) - 1u - request_len)
+                     : next_len;
+
+          (void)netbuf_copy(nextbuf, &g_http_request_buffer[request_len], copy_len);
+          request_len = (u16_t)(request_len + copy_len);
+          g_http_request_buffer[request_len] = '\0';
+
+          body_start = strstr(g_http_request_buffer, "\r\n\r\n");
+          if (body_start != NULL)
+          {
+            body_len = (u16_t)(request_len - (u16_t)((body_start + 4) - g_http_request_buffer));
+          }
+
+          netbuf_delete(nextbuf);
+          nextbuf = NULL;
+        }
+      }
     
       /* Is this an HTTP GET command? (only check the first 5 chars, since
       there are other formats for GET, and we're keeping it very simple )*/
-      if ((buflen >=5) && (strncmp(buf, "GET /", 5) == 0))
+      if ((request_len >= 17) && (strncmp(g_http_request_buffer, "POST /save_config", 17) == 0))
       {
-        if((strncmp(buf, "GET /test ", 10) == 0) ||
-           (strncmp(buf, "GET / ", 6) == 0))
+        network_config_http_handle_save(conn, g_http_request_buffer, request_len);
+      }
+      else if ((request_len >= 5) && (strncmp(g_http_request_buffer, "GET /", 5) == 0))
+      {
+        if (strncmp(g_http_request_buffer, "GET /config.html", 16) == 0)
+        {
+          network_config_http_send_form(conn);
+        }
+        else if ((strncmp(g_http_request_buffer, "GET /test ", 10) == 0) ||
+                 (strncmp(g_http_request_buffer, "GET / ", 6) == 0))
         {
           netconn_write(conn, TEST_PAGE, strlen(TEST_PAGE), NETCONN_COPY);
         }
-        else 
+        else
         {
-          netconn_write(conn, TEST_PAGE_1, strlen(TEST_PAGE), NETCONN_COPY);
+          netconn_write(conn, TEST_PAGE_1, strlen(TEST_PAGE_1), NETCONN_COPY);
         }
       }
     }
@@ -97,7 +185,15 @@ static void http_server_serve(struct netconn *conn)
   
   /* Delete the buffer (netconn_recv gives us ownership,
    so we have to make sure to deallocate the buffer) */
-  netbuf_delete(inbuf);
+  if (inbuf != NULL)
+  {
+    netbuf_delete(inbuf);
+  }
+
+  if (nextbuf != NULL)
+  {
+    netbuf_delete(nextbuf);
+  }
 }
 
 

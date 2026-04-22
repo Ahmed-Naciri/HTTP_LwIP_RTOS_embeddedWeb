@@ -43,7 +43,7 @@
 #define ETHIF_TX_TIMEOUT (2000U)
 /* USER CODE BEGIN OS_THREAD_STACK_SIZE_WITH_RTOS */
 /* Stack size of the interface thread */
-#define INTERFACE_THREAD_STACK_SIZE ( 350 )
+#define INTERFACE_THREAD_STACK_SIZE ( 1024 )
 /* USER CODE END OS_THREAD_STACK_SIZE_WITH_RTOS */
 /* Network interface name */
 #define IFNAME0 's'
@@ -102,6 +102,7 @@ static uint8_t RxAllocStatus;
 
 ETH_DMADescTypeDef  DMARxDscrTab[ETH_RX_DESC_CNT]; /* Ethernet Rx DMA Descriptors */
 ETH_DMADescTypeDef  DMATxDscrTab[ETH_TX_DESC_CNT]; /* Ethernet Tx DMA Descriptors */
+static uint8_t g_eth_mac_addr[6] = {0x02, 0x80, 0xE1, 0x42, 0x00, 0x01};
 
 /* USER CODE BEGIN 2 */
 
@@ -191,15 +192,8 @@ static void low_level_init(struct netif *netif)
   ETH_MACConfigTypeDef MACConf = {0};
   /* Start ETH HAL Init */
 
-   uint8_t MACAddr[6] ;
   heth.Instance = ETH;
-  MACAddr[0] = 0x00;
-  MACAddr[1] = 0x80;
-  MACAddr[2] = 0xE1;
-  MACAddr[3] = 0x00;
-  MACAddr[4] = 0x00;
-  MACAddr[5] = 0x00;
-  heth.Init.MACAddr = &MACAddr[0];
+  heth.Init.MACAddr = g_eth_mac_addr;
   heth.Init.MediaInterface = HAL_ETH_MII_MODE;
   heth.Init.TxDesc = DMATxDscrTab;
   heth.Init.RxDesc = DMARxDscrTab;
@@ -801,6 +795,7 @@ void ethernet_link_thread(void* argument)
   ETH_MACConfigTypeDef MACConf = {0};
   int32_t PHYLinkState = 0;
   uint32_t linkchanged = 0U, speed = 0U, duplex = 0U;
+  uint32_t down_confirm_count = 0U;
 
   struct netif *netif = (struct netif *) argument;
 /* USER CODE BEGIN ETH link init */
@@ -809,54 +804,70 @@ void ethernet_link_thread(void* argument)
 
   for(;;)
   {
-  PHYLinkState = DP83848_GetLinkState(&DP83848);
+    PHYLinkState = DP83848_GetLinkState(&DP83848);
 
-  if(netif_is_link_up(netif) && (PHYLinkState <= DP83848_STATUS_LINK_DOWN))
-  {
-    HAL_ETH_Stop_IT(&heth);
-    netif_set_down(netif);
-    netif_set_link_down(netif);
-  }
-  else if(!netif_is_link_up(netif) && (PHYLinkState > DP83848_STATUS_LINK_DOWN))
-  {
-    switch (PHYLinkState)
+    /* Ignore transient PHY read/status errors to keep link stable. */
+    if (PHYLinkState < DP83848_STATUS_LINK_DOWN)
     {
-    case DP83848_STATUS_100MBITS_FULLDUPLEX:
-      duplex = ETH_FULLDUPLEX_MODE;
-      speed = ETH_SPEED_100M;
-      linkchanged = 1;
-      break;
-    case DP83848_STATUS_100MBITS_HALFDUPLEX:
-      duplex = ETH_HALFDUPLEX_MODE;
-      speed = ETH_SPEED_100M;
-      linkchanged = 1;
-      break;
-    case DP83848_STATUS_10MBITS_FULLDUPLEX:
-      duplex = ETH_FULLDUPLEX_MODE;
-      speed = ETH_SPEED_10M;
-      linkchanged = 1;
-      break;
-    case DP83848_STATUS_10MBITS_HALFDUPLEX:
-      duplex = ETH_HALFDUPLEX_MODE;
-      speed = ETH_SPEED_10M;
-      linkchanged = 1;
-      break;
-    default:
-      break;
+      down_confirm_count = 0U;
     }
+    else if(netif_is_link_up(netif) && (PHYLinkState == DP83848_STATUS_LINK_DOWN))
+    {
+      down_confirm_count++;
+      if (down_confirm_count >= 3U)
+      {
+        HAL_ETH_Stop_IT(&heth);
+        netif_set_down(netif);
+        netif_set_link_down(netif);
+      }
+    }
+    else if(!netif_is_link_up(netif) && (PHYLinkState > DP83848_STATUS_LINK_DOWN))
+    {
+      down_confirm_count = 0U;
+      linkchanged = 0U;
 
-    if(linkchanged)
-    {
-      /* Get MAC Config MAC */
-      HAL_ETH_GetMACConfig(&heth, &MACConf);
-      MACConf.DuplexMode = duplex;
-      MACConf.Speed = speed;
-      HAL_ETH_SetMACConfig(&heth, &MACConf);
-      HAL_ETH_Start_IT(&heth);
-      netif_set_up(netif);
-      netif_set_link_up(netif);
+      switch (PHYLinkState)
+      {
+      case DP83848_STATUS_100MBITS_FULLDUPLEX:
+        duplex = ETH_FULLDUPLEX_MODE;
+        speed = ETH_SPEED_100M;
+        linkchanged = 1U;
+        break;
+      case DP83848_STATUS_100MBITS_HALFDUPLEX:
+        duplex = ETH_HALFDUPLEX_MODE;
+        speed = ETH_SPEED_100M;
+        linkchanged = 1U;
+        break;
+      case DP83848_STATUS_10MBITS_FULLDUPLEX:
+        duplex = ETH_FULLDUPLEX_MODE;
+        speed = ETH_SPEED_10M;
+        linkchanged = 1U;
+        break;
+      case DP83848_STATUS_10MBITS_HALFDUPLEX:
+        duplex = ETH_HALFDUPLEX_MODE;
+        speed = ETH_SPEED_10M;
+        linkchanged = 1U;
+        break;
+      default:
+        break;
+      }
+
+      if(linkchanged)
+      {
+        /* Get MAC Config MAC */
+        HAL_ETH_GetMACConfig(&heth, &MACConf);
+        MACConf.DuplexMode = duplex;
+        MACConf.Speed = speed;
+        HAL_ETH_SetMACConfig(&heth, &MACConf);
+        HAL_ETH_Start_IT(&heth);
+        netif_set_up(netif);
+        netif_set_link_up(netif);
+      }
     }
-  }
+    else
+    {
+      down_confirm_count = 0U;
+    }
 
 /* USER CODE BEGIN ETH link Thread core code for User BSP */
 

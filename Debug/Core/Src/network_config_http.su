@@ -1,5 +1,7 @@
-../Core/Src/network_config_http.c:50:12:parse_octet	32	static
-../Core/Src/network_config_http.c:73:12:parse_ipv4	32	static
-../Core/Src/network_config_http.c:98:12:get_param	64	static
-../Core/Src/network_config_http.c:131:6:network_config_http_send_form	1296	static
-../Core/Src/network_config_http.c:143:6:network_config_http_handle_save	120	static
+../Core/Src/network_config_http.c:55:12:parse_octet	32	static
+../Core/Src/network_config_http.c:78:12:parse_ipv4	32	static
+../Core/Src/network_config_http.c:111:12:hex_to_nibble	16	static
+../Core/Src/network_config_http.c:125:13:url_decode_inplace	32	static
+../Core/Src/network_config_http.c:153:12:get_param	64	static
+../Core/Src/network_config_http.c:193:6:network_config_http_send_form	112	static
+../Core/Src/network_config_http.c:239:6:network_config_http_handle_save	120	static

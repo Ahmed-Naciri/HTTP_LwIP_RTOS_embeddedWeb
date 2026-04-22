@@ -1,9 +1,14 @@
 #include "network_config_http.h"
 
 #include "network_config.h"
+#include "lwip.h"
+#include "lwip/ip4_addr.h"
 
 #include <stdio.h>
 #include <string.h>
+
+/* Keep large HTTP page buffer out of thread stack to avoid hard faults. */
+static char g_config_page_buffer[1400];
 
 static const char CONFIG_PAGE_TEMPLATE[] =
 "HTTP/1.1 200 OK\r\n"
@@ -77,6 +82,10 @@ static int parse_ipv4(const char *text, uint8_t out[4])
   int i;
   int octet;
 
+  while ((*p == ' ') || (*p == '\t')) {
+    p++;
+  }
+
   for (i = 0; i < 4; i++) {
     octet = parse_octet(p, &next);
     if (octet < 0) {
@@ -92,7 +101,53 @@ static int parse_ipv4(const char *text, uint8_t out[4])
     }
   }
 
+  while ((*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n')) {
+    p++;
+  }
+
   return (*p == '\0') ? 1 : 0;
+}
+
+static int hex_to_nibble(char c)
+{
+  if ((c >= '0') && (c <= '9')) {
+    return c - '0';
+  }
+  if ((c >= 'A') && (c <= 'F')) {
+    return c - 'A' + 10;
+  }
+  if ((c >= 'a') && (c <= 'f')) {
+    return c - 'a' + 10;
+  }
+  return -1;
+}
+
+static void url_decode_inplace(char *text)
+{
+  char *src = text;
+  char *dst = text;
+  int hi;
+  int lo;
+
+  while (*src != '\0') {
+    if (*src == '+') {
+      *dst++ = ' ';
+      src++;
+    } else if ((*src == '%') && (src[1] != '\0') && (src[2] != '\0')) {
+      hi = hex_to_nibble(src[1]);
+      lo = hex_to_nibble(src[2]);
+      if ((hi >= 0) && (lo >= 0)) {
+        *dst++ = (char)((hi << 4) | lo);
+        src += 3;
+      } else {
+        *dst++ = *src++;
+      }
+    } else {
+      *dst++ = *src++;
+    }
+  }
+
+  *dst = '\0';
 }
 
 static int get_param(const char *body, const char *key, char *out, unsigned out_size)
@@ -125,19 +180,60 @@ static int get_param(const char *body, const char *key, char *out, unsigned out_
   }
   out[i] = '\0';
 
+  url_decode_inplace(out);
+
+  while ((i > 0u) && ((out[i - 1u] == ' ') || (out[i - 1u] == '\t') || (out[i - 1u] == '\r') || (out[i - 1u] == '\n'))) {
+    out[i - 1u] = '\0';
+    i--;
+  }
+
   return i > 0u;
 }
 
 void network_config_http_send_form(struct netconn *conn)
 {
-  char page[1200];
+  uint8_t disp_ip[4];
+  uint8_t disp_mask[4];
+  uint8_t disp_gw[4];
 
-  (void)snprintf(page, sizeof(page), CONFIG_PAGE_TEMPLATE,
-                 g_network_config.ip[0], g_network_config.ip[1], g_network_config.ip[2], g_network_config.ip[3],
-                 g_network_config.netmask[0], g_network_config.netmask[1], g_network_config.netmask[2], g_network_config.netmask[3],
-                 g_network_config.gateway[0], g_network_config.gateway[1], g_network_config.gateway[2], g_network_config.gateway[3]);
+  disp_ip[0] = g_network_config.ip[0];
+  disp_ip[1] = g_network_config.ip[1];
+  disp_ip[2] = g_network_config.ip[2];
+  disp_ip[3] = g_network_config.ip[3];
 
-  netconn_write(conn, page, strlen(page), NETCONN_COPY);
+  disp_mask[0] = g_network_config.netmask[0];
+  disp_mask[1] = g_network_config.netmask[1];
+  disp_mask[2] = g_network_config.netmask[2];
+  disp_mask[3] = g_network_config.netmask[3];
+
+  disp_gw[0] = g_network_config.gateway[0];
+  disp_gw[1] = g_network_config.gateway[1];
+  disp_gw[2] = g_network_config.gateway[2];
+  disp_gw[3] = g_network_config.gateway[3];
+
+  if (netif_is_up(&gnetif) && netif_is_link_up(&gnetif)) {
+    disp_ip[0] = (uint8_t)ip4_addr1_16(netif_ip4_addr(&gnetif));
+    disp_ip[1] = (uint8_t)ip4_addr2_16(netif_ip4_addr(&gnetif));
+    disp_ip[2] = (uint8_t)ip4_addr3_16(netif_ip4_addr(&gnetif));
+    disp_ip[3] = (uint8_t)ip4_addr4_16(netif_ip4_addr(&gnetif));
+
+    disp_mask[0] = (uint8_t)ip4_addr1_16(netif_ip4_netmask(&gnetif));
+    disp_mask[1] = (uint8_t)ip4_addr2_16(netif_ip4_netmask(&gnetif));
+    disp_mask[2] = (uint8_t)ip4_addr3_16(netif_ip4_netmask(&gnetif));
+    disp_mask[3] = (uint8_t)ip4_addr4_16(netif_ip4_netmask(&gnetif));
+
+    disp_gw[0] = (uint8_t)ip4_addr1_16(netif_ip4_gw(&gnetif));
+    disp_gw[1] = (uint8_t)ip4_addr2_16(netif_ip4_gw(&gnetif));
+    disp_gw[2] = (uint8_t)ip4_addr3_16(netif_ip4_gw(&gnetif));
+    disp_gw[3] = (uint8_t)ip4_addr4_16(netif_ip4_gw(&gnetif));
+  }
+
+  (void)snprintf(g_config_page_buffer, sizeof(g_config_page_buffer), CONFIG_PAGE_TEMPLATE,
+                 disp_ip[0], disp_ip[1], disp_ip[2], disp_ip[3],
+                 disp_mask[0], disp_mask[1], disp_mask[2], disp_mask[3],
+                 disp_gw[0], disp_gw[1], disp_gw[2], disp_gw[3]);
+
+  netconn_write(conn, g_config_page_buffer, strlen(g_config_page_buffer), NETCONN_COPY);
 }
 
 void network_config_http_handle_save(struct netconn *conn, const char *request, unsigned short request_len)

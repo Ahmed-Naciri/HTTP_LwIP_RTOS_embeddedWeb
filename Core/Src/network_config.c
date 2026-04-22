@@ -80,35 +80,11 @@ void network_config_set_defaults(network_config_t *cfg)
 
 bool network_config_is_valid(const network_config_t *cfg)
 {
-  uint32_t ip_net;
-  uint32_t gw_net;
-  uint32_t mask_u32;
-
   if (cfg == NULL) {
     return false;
   }
 
-  if (cfg->magic != NETWORK_CONFIG_MAGIC) {
-    return false;
-  }
-
-  if (!is_valid_netmask(cfg->netmask)) {
-    return false;
-  }
-
-  if (!is_valid_host_ip(cfg->ip, cfg->netmask)) {
-    return false;
-  }
-
-  if (!is_valid_host_ip(cfg->gateway, cfg->netmask)) {
-    return false;
-  }
-
-  mask_u32 = ip_to_u32(cfg->netmask);
-  ip_net = ip_to_u32(cfg->ip) & mask_u32;
-  gw_net = ip_to_u32(cfg->gateway) & mask_u32;
-
-  return ip_net == gw_net;
+  return cfg->magic == NETWORK_CONFIG_MAGIC;
 }
 
 void network_config_load(void)
@@ -139,10 +115,6 @@ bool network_config_save(const network_config_t *cfg)
 
   tmp = *cfg;
   tmp.magic = NETWORK_CONFIG_MAGIC;
-
-  if (!network_config_is_valid(&tmp)) {
-    return false;
-  }
 
   if (!network_config_ee_init()) {
     return false;
