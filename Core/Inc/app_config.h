@@ -9,10 +9,12 @@
 #define INC_APP_CONFIG_H_
 
 #define MAX_UART_PORTS 1
-#define MAX_SLAVES 255
-#define MAX_REGISTERS_PER_SLAVE 1024
+#define MAX_SLAVES 8
+#define MAX_REGISTERS_PER_SLAVE 16
 
 #include <stdint.h>
+
+
 
 
 typedef enum

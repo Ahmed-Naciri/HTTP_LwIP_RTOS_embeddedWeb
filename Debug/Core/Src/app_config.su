@@ -1,0 +1,4 @@
+../Core/Src/app_config.c:12:6:appConfig_defaultInit	16	static
+../Core/Src/app_config.c:45:5:appConfig_addSlave	24	static
+../Core/Src/app_config.c:80:5:appConfig_addRegister	24	static
+../Core/Src/app_config.c:126:5:appConfig_updatePort	16	static

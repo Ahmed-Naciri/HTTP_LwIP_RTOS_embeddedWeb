@@ -9,7 +9,22 @@ RM := rm -rf
 
 # All of the sources participating in the build are defined here
 -include sources.mk
+-include Middlewares/Third_Party/LwIP/system/OS/subdir.mk
+-include Middlewares/Third_Party/LwIP/src/netif/ppp/subdir.mk
+-include Middlewares/Third_Party/LwIP/src/netif/subdir.mk
+-include Middlewares/Third_Party/LwIP/src/core/ipv6/subdir.mk
+-include Middlewares/Third_Party/LwIP/src/core/ipv4/subdir.mk
+-include Middlewares/Third_Party/LwIP/src/core/subdir.mk
+-include Middlewares/Third_Party/LwIP/src/apps/mqtt/subdir.mk
+-include Middlewares/Third_Party/LwIP/src/api/subdir.mk
+-include Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/subdir.mk
+-include Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/subdir.mk
+-include Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/subdir.mk
+-include Middlewares/Third_Party/FreeRTOS/Source/subdir.mk
+-include LWIP/Target/subdir.mk
+-include LWIP/App/subdir.mk
 -include Drivers/STM32F4xx_HAL_Driver/Src/subdir.mk
+-include Drivers/BSP/Components/dp83848/subdir.mk
 -include Core/Startup/subdir.mk
 -include Core/Src/subdir.mk
 -include objects.mk
@@ -60,8 +75,8 @@ all: main-build
 main-build: EmbeddedWebProject.elf secondary-outputs
 
 # Tool invocations
-EmbeddedWebProject.elf EmbeddedWebProject.map: $(OBJS) $(USER_OBJS) C:\Users\bahmdan\STM32CubeIDE\workspace_1.18.1\EmbeddedWebProject\STM32F429ZITX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "EmbeddedWebProject.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\bahmdan\STM32CubeIDE\workspace_1.18.1\EmbeddedWebProject\STM32F429ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="EmbeddedWebProject.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+EmbeddedWebProject.elf EmbeddedWebProject.map: $(OBJS) $(USER_OBJS) C:\Users\bahmdan\Downloads\modbusRTU_multipleSlave\STM32F429ZITX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "EmbeddedWebProject.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\bahmdan\Downloads\modbusRTU_multipleSlave\STM32F429ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="EmbeddedWebProject.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

@@ -122,7 +122,7 @@ modbusMasterStatus_t modbusMaster_GetState(void)
 
 
 
-HAL_StatusTypeDef modbusMaster_GetLastRegisterValue(uint8_t* registerValue)
+HAL_StatusTypeDef modbusMaster_GetLastRegisterValue(uint16_t* registerValue)
 {
 
 	if(registerValue == NULL)

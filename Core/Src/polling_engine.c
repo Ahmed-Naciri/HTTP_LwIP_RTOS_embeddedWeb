@@ -20,7 +20,7 @@ static void pollingEngine_moveToNextRegister(void)
 		currentRegisterIndex = 0;
 		currentSlaveIndex++;
 
-		if(currentSlaveIndexc >= MAX_SLAVE)
+		if(currentSlaveIndex >= MAX_SLAVES)
 		{
 			currentSlaveIndex = 0;
 

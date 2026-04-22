@@ -1,0 +1,8 @@
+../Core/Src/network_config.c:10:13:network_config_ee_init	2
+../Core/Src/network_config.c:18:17:ip_to_u32	1
+../Core/Src/network_config.c:23:13:is_valid_netmask	3
+../Core/Src/network_config.c:36:13:is_valid_host_ip	7
+../Core/Src/network_config.c:57:6:network_config_set_defaults	2
+../Core/Src/network_config.c:81:6:network_config_is_valid	6
+../Core/Src/network_config.c:114:6:network_config_load	3
+../Core/Src/network_config.c:132:6:network_config_save	4

@@ -18,7 +18,7 @@ void appConfig_defaultInit(void)
 		appDb.ports[i].used = 0;
 		appDb.ports[i].portId = USART_PORT_3;
 		appDb.ports[i].baudRate = 9600;
-		appDb.ports[i].sotpBits = 1;
+		appDb.ports[i].stopBits = 1;
 		appDb.ports[i].parity = PARITY_NONE;
 	}
 
@@ -98,7 +98,7 @@ int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t
 	for(i = 0; i < MAX_REGISTERS_PER_SLAVE; i++)
 	{
 		if((slave->registerConfig[i].used == 1)&&
-		   (slave->registerConfig.regAddress == regAddress))
+		   (slave->registerConfig[i].regAddress == regAddress))
 		{
 			return -3; // verify if a register of that salve  has the same regAddress and  is used
 		}

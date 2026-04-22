@@ -1,0 +1,3 @@
+../Core/Src/fs.c:57:1:fs_open	5
+../Core/Src/fs.c:96:1:fs_close	1
+../Core/Src/fs.c:171:1:fs_bytes_left	1

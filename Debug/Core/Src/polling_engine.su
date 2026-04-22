@@ -1,0 +1,3 @@
+../Core/Src/polling_engine.c:15:13:pollingEngine_moveToNextRegister	4	static
+../Core/Src/polling_engine.c:33:6:pollingEngine_init	4	static
+../Core/Src/polling_engine.c:40:6:pollingEngine_task	24	static
