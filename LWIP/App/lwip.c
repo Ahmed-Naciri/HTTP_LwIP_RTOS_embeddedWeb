@@ -46,6 +46,8 @@ struct netif gnetif;
 ip4_addr_t ipaddr;
 ip4_addr_t netmask;
 ip4_addr_t gw;
+/* These globals are intentionally exported through lwip.h so HTTP code can
+  display live runtime values (not only persisted values). */
 /* USER CODE BEGIN OS_THREAD_ATTR_CMSIS_RTOS_V2 */
 #define INTERFACE_THREAD_STACK_SIZE ( 1024 )
 osThreadAttr_t attributes;
@@ -80,13 +82,13 @@ void MX_LWIP_Init(void)
            g_network_config.gateway[2],
            g_network_config.gateway[3]);
 
-  /* add the network interface (IPv4/IPv6) with RTOS */
+  /* Add the Ethernet interface with persisted static IPv4 configuration. */
   netif_add(&gnetif, &ipaddr, &netmask, &gw, NULL, &ethernetif_init, &tcpip_input);
 
-  /* Registers the default network interface */
+  /* Use this interface as default route for the stack. */
   netif_set_default(&gnetif);
 
-  /* We must always bring the network interface up connection or not... */
+  /* Bring software interface up; physical link state is handled separately. */
   netif_set_up(&gnetif);
 
   /* Set the link callback function, this function is called on change of link status*/

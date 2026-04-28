@@ -1,4 +1,10 @@
-../Core/Src/app_config.c:12:6:appConfig_defaultInit	4
-../Core/Src/app_config.c:45:5:appConfig_addSlave	8
-../Core/Src/app_config.c:80:5:appConfig_addRegister	8
-../Core/Src/app_config.c:126:5:appConfig_updatePort	2
+../Core/Src/app_config.c:14:6:appConfig_setDefaults	5
+../Core/Src/app_config.c:53:6:appConfig_defaultInit	1
+../Core/Src/app_config.c:59:6:appConfig_isValid	20
+../Core/Src/app_config.c:144:6:appConfig_load	3
+../Core/Src/app_config.c:165:5:appConfig_save	3
+../Core/Src/app_config.c:181:5:appConfig_addSlave	9
+../Core/Src/app_config.c:216:5:appConfig_addRegister	9
+../Core/Src/app_config.c:266:5:appConfig_removeSlave	4
+../Core/Src/app_config.c:299:5:appConfig_removeRegister	7
+../Core/Src/app_config.c:339:5:appConfig_updatePort	2

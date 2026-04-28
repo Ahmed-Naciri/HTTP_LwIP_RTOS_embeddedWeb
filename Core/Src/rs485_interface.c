@@ -9,6 +9,42 @@
 
 extern UART_HandleTypeDef huart3;
 
+//HAL_StatusTypeDef rs485_interface_apply_config(uint32_t baudRate, uint8_t stopBits,parityType_t parity)
+//{
+//	UART_InitTypeDef uartInit;
+//	HAL_StatusTypeDef status;
+//
+//	if ((baudRate == 0u) || ((stopBits != 1u) && (stopBits != 2u)) ||
+//		(parity > PARITY_ODD))
+//	{
+//		return HAL_ERROR;
+//	}
+//
+//	uartInit = huart3.Init;
+//	uartInit.BaudRate = baudRate;
+//	uartInit.StopBits = (stopBits == 2u) ? UART_STOPBITS_2 : UART_STOPBITS_1;
+//	uartInit.Parity = (parity == PARITY_NONE) ? UART_PARITY_NONE :
+//					  ((parity == PARITY_EVEN) ? UART_PARITY_EVEN : UART_PARITY_ODD);
+//	uartInit.WordLength = (parity == PARITY_NONE) ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
+//
+//	(void)HAL_UART_Abort(&huart3);
+//	status = HAL_UART_DeInit(&huart3);
+//	if (status != HAL_OK)
+//	{
+//		return status;
+//	}
+//
+//	huart3.Init = uartInit;
+//	status = HAL_UART_Init(&huart3);
+//	if (status != HAL_OK)
+//	{
+//		return status;
+//	}
+//
+//	rs485_interface_enableRxMode();
+//	return HAL_OK;
+//}
+
 void rs485_interface_init(void)
 {
     rs485_interface_enableRxMode();

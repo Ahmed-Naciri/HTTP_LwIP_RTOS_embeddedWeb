@@ -1,4 +1,5 @@
 "./Core/Src/app_config.o"
+"./Core/Src/app_config_http.o"
 "./Core/Src/ee.o"
 "./Core/Src/freertos.o"
 "./Core/Src/fs.o"
@@ -7,6 +8,7 @@
 "./Core/Src/modbus_rtu_master.o"
 "./Core/Src/network_config.o"
 "./Core/Src/network_config_http.o"
+"./Core/Src/persistent_store.o"
 "./Core/Src/polling_engine.o"
 "./Core/Src/rs485_interface.o"
 "./Core/Src/stm32f4xx_hal_msp.o"

@@ -6,35 +6,43 @@
  */
 #include "app_config.h"
 
+#include "persistent_store.h"
+
 
 appDataBase_t appDb;
 
-void appConfig_defaultInit(void)
+void appConfig_setDefaults(appDataBase_t* db)
 {
 	uint8_t i,j;
 
+	if (db == 0)
+	{
+		return;
+	}
+
 	for( i = 0; i < MAX_UART_PORTS; i++)
 	{
-		appDb.ports[i].used = 0;
-		appDb.ports[i].portId = USART_PORT_3;
-		appDb.ports[i].baudRate = 9600;
-		appDb.ports[i].stopBits = 1;
-		appDb.ports[i].parity = PARITY_NONE;
+		db->ports[i].used = 0;
+		db->ports[i].portId = USART_PORT_3;
+		db->ports[i].baudRate = 9600;
+		db->ports[i].stopBits = 1;
+		db->ports[i].parity = PARITY_NONE;
 	}
 
 	for(i = 0; i < MAX_SLAVES ; i++)
 	{
-		appDb.slaveConfig[i].used = 0;
-		appDb.slaveConfig[i].slaveAddress = 0;
-		appDb.slaveConfig[i].portId = USART_PORT_3;
-		appDb.slaveConfig[i].registerCount = 0;
+		db->slaveConfig[i].used = 0;
+		db->slaveConfig[i].slaveAddress = 0;
+		db->slaveConfig[i].portId = USART_PORT_3;
+		db->slaveConfig[i].registerCount = 0;
 
 	  for(j = 0 ; j < MAX_REGISTERS_PER_SLAVE ; j++)
 	  {
-		appDb.slaveConfig[i].registerConfig[j].used = 0;
-		appDb.slaveConfig[i].registerConfig[j].regAddress = 0;
-		appDb.slaveConfig[i].registerConfig[j].registerType = REG_TYPE_U16;
-		appDb.slaveConfig[i].registerConfig[j].lastValue = 0;
+		db->slaveConfig[i].registerConfig[j].used = 0;
+		db->slaveConfig[i].registerConfig[j].regAddress = 0;
+		db->slaveConfig[i].registerConfig[j].registerType = REG_TYPE_U16;
+		db->slaveConfig[i].registerConfig[j].lastValue = 0;
+		db->slaveConfig[i].registerConfig[j].valid = 0;
 
 	  }
 
@@ -42,10 +50,138 @@ void appConfig_defaultInit(void)
 
 }
 
+void appConfig_defaultInit(void)
+{
+	appConfig_setDefaults(&appDb);
+
+}
+
+bool appConfig_isValid(const appDataBase_t* db)
+{
+	uint8_t i;
+	uint8_t j;
+	uint16_t used_registers;
+
+	if (db == 0)
+	{
+		return false;
+	}
+
+	for (i = 0; i < MAX_UART_PORTS; i++)
+	{
+		if (db->ports[i].used > 1u)
+		{
+			return false;
+		}
+		if ((uint32_t)db->ports[i].portId >= (uint32_t)MAX_UART_PORTS)
+		{
+			return false;
+		}
+		if ((db->ports[i].stopBits != 1u) && (db->ports[i].stopBits != 2u))
+		{
+			return false;
+		}
+		if ((uint32_t)db->ports[i].parity > (uint32_t)PARITY_ODD)
+		{
+			return false;
+		}
+	}
+
+	for (i = 0; i < MAX_SLAVES; i++)
+	{
+		if (db->slaveConfig[i].used > 1u)
+		{
+			return false;
+		}
+
+		if (db->slaveConfig[i].used == 1u)
+		{
+			if ((db->slaveConfig[i].slaveAddress == 0u) || (db->slaveConfig[i].slaveAddress > 247u))
+			{
+				return false;
+			}
+
+			if ((uint32_t)db->slaveConfig[i].portId >= (uint32_t)MAX_UART_PORTS)
+			{
+				return false;
+			}
+		}
+
+		used_registers = 0u;
+		for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++)
+		{
+			if (db->slaveConfig[i].registerConfig[j].used > 1u)
+			{
+				return false;
+			}
+
+			if (db->slaveConfig[i].registerConfig[j].used == 1u)
+			{
+				if (db->slaveConfig[i].used == 0u)
+				{
+					return false;
+				}
+
+				if ((uint32_t)db->slaveConfig[i].registerConfig[j].registerType > (uint32_t)REG_TYPE_FLOAT)
+				{
+					return false;
+				}
+
+				used_registers++;
+			}
+		}
+
+		if (used_registers != db->slaveConfig[i].registerCount)
+		{
+			return false;
+		}
+	}
+
+	return true;
+
+}
+
+void appConfig_load(void)
+{
+	appDataBase_t loaded;
+
+	appConfig_setDefaults(&appDb);
+
+	if (!persistent_store_load_app(&loaded))
+	{
+		return;
+	}
+
+	if (!appConfig_isValid(&loaded))
+	{
+		(void)appConfig_save();
+		return;
+	}
+
+	appDb = loaded;
+
+}
+
+int appConfig_save(void)
+{
+	if (!appConfig_isValid(&appDb))
+	{
+		return -1;
+	}
+
+	if (!persistent_store_save_app(&appDb))
+	{
+		return -1;
+	}
+
+	return 0;
+
+}
+
 int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId)
 {
 	uint8_t i;
-	if(slaveAddress == 0 || slaveAddress > 255 )
+	if((slaveAddress == 0u) || (slaveAddress > 247u))
 	{
 		return -1; // invalid address
 	}
@@ -82,6 +218,11 @@ int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t
 
 	uint8_t i ;
 	slaveConfig_t* slave;
+
+	if ((uint32_t)registerType > (uint32_t)REG_TYPE_FLOAT)
+	{
+		return -1;
+	}
 
 	if(slaveIndex  >= MAX_SLAVES)
 	{
@@ -120,6 +261,78 @@ int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t
 
 	return -4; // if it is not one of the previous cases , it means that  the array is full
 
+}
+
+int appConfig_removeSlave(uint8_t slaveIndex)
+{
+	uint8_t i;
+	slaveConfig_t* slave;
+
+	if (slaveIndex >= MAX_SLAVES)
+	{
+		return -1;
+	}
+
+	slave = &appDb.slaveConfig[slaveIndex];
+	if (slave->used == 0u)
+	{
+		return -2;
+	}
+
+	for (i = 0; i < MAX_REGISTERS_PER_SLAVE; i++)
+	{
+		slave->registerConfig[i].used = 0u;
+		slave->registerConfig[i].regAddress = 0u;
+		slave->registerConfig[i].registerType = REG_TYPE_U16;
+		slave->registerConfig[i].lastValue = 0.0f;
+		slave->registerConfig[i].valid = 0u;
+	}
+
+	slave->used = 0u;
+	slave->slaveAddress = 0u;
+	slave->portId = USART_PORT_3;
+	slave->registerCount = 0u;
+
+	return 0;
+}
+
+int appConfig_removeRegister(uint8_t slaveIndex, uint16_t regAddress)
+{
+	uint8_t i;
+	slaveConfig_t* slave;
+
+	if (slaveIndex >= MAX_SLAVES)
+	{
+		return -1;
+	}
+
+	slave = &appDb.slaveConfig[slaveIndex];
+	if (slave->used == 0u)
+	{
+		return -2;
+	}
+
+	for (i = 0; i < MAX_REGISTERS_PER_SLAVE; i++)
+	{
+		if ((slave->registerConfig[i].used == 1u) &&
+			(slave->registerConfig[i].regAddress == regAddress))
+		{
+			slave->registerConfig[i].used = 0u;
+			slave->registerConfig[i].regAddress = 0u;
+			slave->registerConfig[i].registerType = REG_TYPE_U16;
+			slave->registerConfig[i].lastValue = 0.0f;
+			slave->registerConfig[i].valid = 0u;
+
+			if (slave->registerCount > 0u)
+			{
+				slave->registerCount--;
+			}
+
+			return 0;
+		}
+	}
+
+	return -3;
 }
 
 

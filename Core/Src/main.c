@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "lwip.h"
 #include "httpserver-netconn.h"
+#include "app_config.h"
 #include "network_config.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -338,10 +339,16 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
+  /* 1) Load persisted network configuration from EEPROM emulation.
+     This must happen before lwIP init so boot uses saved IP settings. */
   network_config_load();
+    /* Load persisted Modbus app configuration before runtime tasks use appDb. */
+    appConfig_load();
   /* init code for LWIP */
-  MX_LWIP_Init();
-  http_server_netconn_init();
+  /* 2) Apply loaded IP/netmask/gateway and bring lwIP/netif up. */
+  MX_LWIP_Init();// Now we have a properly configured Ethernet interface
+  /* 3) Start the HTTP server thread after networking is initialized. */
+  http_server_netconn_init();//The server uses the Netconn API of LwIP.
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for(;;)

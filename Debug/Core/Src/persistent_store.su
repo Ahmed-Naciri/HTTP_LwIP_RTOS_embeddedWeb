@@ -1,0 +1,6 @@
+../Core/Src/persistent_store.c:20:13:persistent_store_set_defaults	16	static
+../Core/Src/persistent_store.c:33:13:persistent_store_ensure_loaded	16	static
+../Core/Src/persistent_store.c:74:6:persistent_store_load_network	24	static
+../Core/Src/persistent_store.c:89:6:persistent_store_save_network	24	static
+../Core/Src/persistent_store.c:110:6:persistent_store_load_app	16	static
+../Core/Src/persistent_store.c:125:6:persistent_store_save_app	16	static

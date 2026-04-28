@@ -1,3 +1,8 @@
+/*
+ * @brief  This file manages the web page configuration
+ *
+ */
+
 #include "network_config_http.h"
 
 #include "network_config.h"
@@ -82,6 +87,7 @@ static int parse_ipv4(const char *text, uint8_t out[4])
   int i;
   int octet;
 
+  /* Allow leading spaces/tabs from user input and browser encoding quirks. */
   while ((*p == ' ') || (*p == '\t')) {
     p++;
   }
@@ -105,6 +111,7 @@ static int parse_ipv4(const char *text, uint8_t out[4])
     p++;
   }
 
+  /* Only valid if nothing but trailing whitespace remains. */
   return (*p == '\0') ? 1 : 0;
 }
 
@@ -130,10 +137,12 @@ static void url_decode_inplace(char *text)
   int lo;
 
   while (*src != '\0') {
+    /* HTML form encoding: '+' means space. */
     if (*src == '+') {
       *dst++ = ' ';
       src++;
     } else if ((*src == '%') && (src[1] != '\0') && (src[2] != '\0')) {
+      /* Percent decoding for URL-encoded values (e.g. %2E => '.'). */
       hi = hex_to_nibble(src[1]);
       lo = hex_to_nibble(src[2]);
       if ((hi >= 0) && (lo >= 0)) {
@@ -196,6 +205,11 @@ void network_config_http_send_form(struct netconn *conn)
   uint8_t disp_mask[4];
   uint8_t disp_gw[4];
 
+    /* Start with persisted values, then override with live netif values when
+       link is up so UI shows current runtime state.Because the page then shows the actual running network state,
+       not just the last saved config (last config will be displayed after reboot). */
+
+  //g_network_config = what you configured / saved
   disp_ip[0] = g_network_config.ip[0];
   disp_ip[1] = g_network_config.ip[1];
   disp_ip[2] = g_network_config.ip[2];
@@ -211,6 +225,7 @@ void network_config_http_send_form(struct netconn *conn)
   disp_gw[2] = g_network_config.gateway[2];
   disp_gw[3] = g_network_config.gateway[3];
 
+//gnetif = what the network actually uses
   if (netif_is_up(&gnetif) && netif_is_link_up(&gnetif)) {
     disp_ip[0] = (uint8_t)ip4_addr1_16(netif_ip4_addr(&gnetif));
     disp_ip[1] = (uint8_t)ip4_addr2_16(netif_ip4_addr(&gnetif));
@@ -251,6 +266,7 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
     return;
   }
 
+  /* Body starts after the blank line that terminates HTTP headers.because when the user save the form , the browser sent a request that contain both Header and Body separated by this : \r\n\r\n */
   body = strstr(request, "\r\n\r\n");
   if (body == NULL) {
     netconn_write(conn, SAVE_BAD_REQUEST, strlen(SAVE_BAD_REQUEST), NETCONN_COPY);
@@ -258,6 +274,7 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
   }
   body += 4;
 
+  /* Read and decode required fields from application/x-www-form-urlencoded body. */
   if ((!get_param(body, "ip", ip_str, sizeof(ip_str))) ||
       (!get_param(body, "netmask", mask_str, sizeof(mask_str))) ||
       (!get_param(body, "gateway", gw_str, sizeof(gw_str)))) {
@@ -265,6 +282,7 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
     return;
   }
 
+  /* Parse into numeric octets and reject invalid values early. */
   new_cfg = g_network_config;
   if ((!parse_ipv4(ip_str, new_cfg.ip)) ||
       (!parse_ipv4(mask_str, new_cfg.netmask)) ||
@@ -273,6 +291,7 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
     return;
   }
 
+  /* Persist to flash-backed EEPROM emulation. */
   if (!network_config_save(&new_cfg)) {
     netconn_write(conn, SAVE_BAD_REQUEST, strlen(SAVE_BAD_REQUEST), NETCONN_COPY);
     return;

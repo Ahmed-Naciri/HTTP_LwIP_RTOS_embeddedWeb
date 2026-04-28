@@ -1,19 +1,10 @@
 #include "network_config.h"
 
-#include "ee.h"
+#include "persistent_store.h"
 #include <string.h>
 
+
 network_config_t g_network_config;
-
-static bool g_ee_ready = false;
-
-static bool network_config_ee_init(void)
-{
-  if (!g_ee_ready) {
-    g_ee_ready = ee_init(&g_network_config, sizeof(g_network_config));
-  }
-  return g_ee_ready;
-}
 
 static uint32_t ip_to_u32(const uint8_t ip[4])
 {
@@ -91,18 +82,20 @@ void network_config_load(void)
 {
   network_config_t tmp;
 
+  /* Always start from safe defaults, then try to overlay persisted data. */
   network_config_set_defaults(&g_network_config);
 
-  if (!network_config_ee_init()) {
+  if (!persistent_store_load_network(&tmp)) {
     return;
   }
 
-  ee_read();
-
-  if (!network_config_is_valid(&g_network_config)) {
+  /* If flash content is invalid, recover by writing defaults back. */
+  if (!network_config_is_valid(&tmp)) {
     network_config_set_defaults(&tmp);
-    (void)network_config_save(&tmp);
+    (void)persistent_store_save_network(&tmp);
   }
+
+  g_network_config = tmp;
 }
 
 bool network_config_save(const network_config_t *cfg)
@@ -114,12 +107,14 @@ bool network_config_save(const network_config_t *cfg)
   }
 
   tmp = *cfg;
+  /* Enforce magic marker for future validity checks on boot. */
   tmp.magic = NETWORK_CONFIG_MAGIC;
 
-  if (!network_config_ee_init()) {
+  if (!persistent_store_save_network(&tmp)) {
     return false;
   }
 
+  /* Update runtime copy first, then persist to EEPROM emulation area. */
   g_network_config = tmp;
-  return ee_write();
+  return true;
 }

@@ -47,6 +47,7 @@
 
 /* Global Variables ----------------------------------------------------------*/
 extern ETH_HandleTypeDef heth;
+/* Export runtime netif/IP symbols so web config page can show live values. */
 extern struct netif gnetif;
 extern ip4_addr_t ipaddr;
 extern ip4_addr_t netmask;

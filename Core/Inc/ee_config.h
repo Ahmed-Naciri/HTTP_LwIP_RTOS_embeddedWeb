@@ -47,6 +47,9 @@
 
 #define EE_MANUAL_CONFIG                  1
 #if (EE_MANUAL_CONFIG == 1)
+/* Network settings persistence depends on this mapping staying coherent:
+	sector number, sector size, bank, and base address must describe
+	the same physical flash region. */
 #define EE_SELECTED_PAGE_SECTOR_NUMBER    11
 #define EE_SELECTED_PAGE_SECTOR_SIZE      EE_PAGE_SECTOR_SIZE_128K
 #define EE_SELECTED_BANK                  FLASH_BANK_1

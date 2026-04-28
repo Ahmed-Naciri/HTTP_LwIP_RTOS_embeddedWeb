@@ -12,6 +12,7 @@
 #define MAX_SLAVES 8
 #define MAX_REGISTERS_PER_SLAVE 16
 
+#include <stdbool.h>
 #include <stdint.h>
 
 
@@ -83,7 +84,11 @@ typedef struct
 
 extern appDataBase_t appDb ;
 
+void appConfig_setDefaults(appDataBase_t* db);
 void appConfig_defaultInit(void);
+bool appConfig_isValid(const appDataBase_t* db);
+void appConfig_load(void);
+int appConfig_save(void);
 
 int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId);
 int appConfig_removeSlave(uint8_t slaveIndex);

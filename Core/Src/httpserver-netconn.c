@@ -18,6 +18,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "string.h"
 #include "httpserver-netconn.h"
+#include "app_config_http.h"
 #include "network_config_http.h"
 #include "cmsis_os.h"
 
@@ -42,7 +43,9 @@ static int parse_content_length(const char *request)
     return -1;
   }
 
-  p = strstr(request, "Content-Length:");
+    /* Look up HTTP Content-Length so POST body can be assembled completely
+      even when TCP data arrives in multiple segments. */
+    p = strstr(request, "Content-Length:");
   if (p == NULL)
   {
     return -1;
@@ -105,8 +108,7 @@ static void http_server_serve(struct netconn *conn)
   u16_t request_len;
   char *body_start;
   
-  /* Read the data from the port, blocking if nothing yet there. 
-   We assume the request (the part we care about) is in one netbuf */
+  /* Read the first TCP segment for this request. */
   recv_err = netconn_recv(conn, &inbuf);
   
   if (recv_err == ERR_OK)
@@ -114,12 +116,15 @@ static void http_server_serve(struct netconn *conn)
     if (netconn_err(conn) == ERR_OK) 
     {
       total_len = netbuf_len(inbuf);
+      /* Copy request into a bounded, null-terminated buffer for safe parsing. */
       request_len = (total_len < (sizeof(g_http_request_buffer) - 1u)) ? total_len : (sizeof(g_http_request_buffer) - 1u);
       (void)netbuf_copy(inbuf, g_http_request_buffer, request_len);
       g_http_request_buffer[request_len] = '\0';
 
-      if ((request_len >= 17) && (strncmp(g_http_request_buffer, "POST /save_config", 17) == 0))
+      if ((request_len >= 5) && (strncmp(g_http_request_buffer, "POST ", 5) == 0))
       {
+        /* POST payload may be split across multiple netconn_recv calls.
+           Keep reading until body length reaches Content-Length. */
         content_len = parse_content_length(g_http_request_buffer);
         body_start = strstr(g_http_request_buffer, "\r\n\r\n");
         body_len = 0u;
@@ -156,17 +161,24 @@ static void http_server_serve(struct netconn *conn)
         }
       }
     
-      /* Is this an HTTP GET command? (only check the first 5 chars, since
-      there are other formats for GET, and we're keeping it very simple )*/
+      /* Route dispatch: save endpoint, config page, and test pages. */
       if ((request_len >= 17) && (strncmp(g_http_request_buffer, "POST /save_config", 17) == 0))
       {
         network_config_http_handle_save(conn, g_http_request_buffer, request_len);
+      }
+      else if ((request_len >= 24) && (strncmp(g_http_request_buffer, "POST /save_modbus_config", 24) == 0))
+      {
+        app_config_http_handle_save(conn, g_http_request_buffer, request_len);
       }
       else if ((request_len >= 5) && (strncmp(g_http_request_buffer, "GET /", 5) == 0))
       {
         if (strncmp(g_http_request_buffer, "GET /config.html", 16) == 0)
         {
           network_config_http_send_form(conn);
+        }
+        else if (strncmp(g_http_request_buffer, "GET /modbus_config.html", 23) == 0)
+        {
+          app_config_http_send_form(conn);
         }
         else if ((strncmp(g_http_request_buffer, "GET /test ", 10) == 0) ||
                  (strncmp(g_http_request_buffer, "GET / ", 6) == 0))

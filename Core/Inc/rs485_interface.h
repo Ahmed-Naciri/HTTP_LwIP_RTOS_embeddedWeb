@@ -15,6 +15,7 @@
 void rs485_interface_init(void);
 void rs485_interface_enableTxMode(void);
 void rs485_interface_enableRxMode(void);
+//HAL_StatusTypeDef rs485_interface_apply_config(uint32_t baudRate, uint8_t stopBits, parityType_t parity);
 
 
 HAL_StatusTypeDef rs485_interface_send(uint8_t* Txbuffer, uint16_t TxbufferLength);
