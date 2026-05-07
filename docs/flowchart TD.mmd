@@ -1,0 +1,18 @@
+flowchart TD
+  A[Requête Web: save_port] --> B{Valide champs?}
+  B -- Non --> Z[Retour: VALIDATION_FAILED]
+  B -- Oui --> C[Prendre mutex; snapshot RAM+HW]
+  C --> D[Appeler rs485_interface_apply_config]
+  D -- Échec --> E[rs485_interface_restore_config]
+  E --> F[Restaurer RAM; Libérer mutex]
+  F --> Z2[Retour: HW_APPLY_FAILED]
+  D -- Succès --> G[modbusMaster_onUartReconfig]
+  G --> H[appConfig_save] 
+  H -- Échec --> I[Retry persist une fois]
+  I -- Échec --> J[Log PERSIST_FAILED; Retour PERSIST_FAILED]
+  H -- Succès --> K[Libérer mutex; Retour OK]
+
+  classDef ok fill:#e6ffed,stroke:#1a7f37,color:#0b3b1a;
+  classDef err fill:#ffecec,stroke:#b30000,color:#660000;
+  class B,C,D,E,F,G,H,I,J,K ok;
+  class Z,Z2 err;

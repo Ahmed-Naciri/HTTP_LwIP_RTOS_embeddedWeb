@@ -8,10 +8,43 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * FICHIER: app_config_http.c
+ * OBJECTIF: Gérer l'interface HTTP pour la configuration Modbus RTU
+ * 
+ * Ce module gère:
+ *  - Rendu des pages HTML de configuration (port UART, slaves Modbus, registres)
+ *  - Traitement des requêtes POST pour ajouter/supprimer slaves et registres
+ *  - Application des changements (baud, parity, stop bits) et sauvegarde en Flash
+ *  - Gestion des erreurs avec messages de statut au navigateur
+ *
+ * Le programme FONCTIONNERA SANS ce fichier, mais sans interface web pour configurer Modbus.
+ */
+
+/*
+ * VARIABLES GLOBALES:
+ *  g_app_config_page_buffer: buffer de 12000 octets pour stocker la page HTML générée
+ *  g_page_used: nombre d'octets actuellement utilisés dans le buffer
+ * 
+ * Ces variables évitent les allocations dynamiques (heap) qui sont risquées en embedded.
+ * Sans elles, on devrait allouer/libérer mémoire, ce qui peut causer de la fragmentation.
+ */
 static char g_app_config_page_buffer[12000];
 static size_t g_page_used = 0u;
 
-/* Convert one hexadecimal character to its numeric nibble value. */
+/*
+ * hex_to_nibble(c)
+ * 
+ * OBJECTIF: Convertir un caractère hexadécimal ('0'-'9', 'A'-'F', 'a'-'f') en sa valeur numérique (0-15)
+ * 
+ * POURQUOI: Nécessaire pour décoder les URL encodées comme %20 (espace), %3D (=), etc.
+ *           Les formulaires web envoient des données URL-encodées, pas du texte brut.
+ * 
+ * UTILISATION: Appelée par url_decode_inplace() pour décoder chaque couple de hex.
+ * 
+ * SANS CETTE FONCTION: Les données du formulaire ne seraient pas décodées correctement.
+ *                      Les valeurs comme "19200" resteraient encodées => erreur de parsing.
+ */
 static int hex_to_nibble(char c)
 {
   if ((c >= '0') && (c <= '9')) {
@@ -26,7 +59,25 @@ static int hex_to_nibble(char c)
   return -1;
 }
 
-/* Decode application/x-www-form-urlencoded data in place. */
+/*
+ * url_decode_inplace(text)
+ * 
+ * OBJECTIF: Décoder une chaîne URL-encodée IN PLACE (sans allocations supplémentaires)
+ * 
+ * MÉCANISME:
+ *  - Remplace '+' par espace
+ *  - Remplace '%XY' par le caractère correspondant (X,Y = hex digits)
+ *  - Autres caractères restent inchangés
+ * 
+ * POURQUOI: Les navigateurs envoient les données de formulaire au format URL-encoded:
+ *           form field "baud=19200" devient "baud%3D19200" si contient caractères spéciaux.
+ *           Sans décodage, on ne peut pas extraire les valeurs correctement.
+ * 
+ * UTILISATION: Appelée par get_param() après extraction du champ pour nettoyer la valeur.
+ * 
+ * SANS CETTE FONCTION: Les valeurs extraites restent encodées (ex: "19200" au lieu de "19200")
+ *                      => Les parsers numériques échoueraient => Configuration impossible.
+ */
 static void url_decode_inplace(char *text)
 {
   char *src = text;
@@ -55,7 +106,32 @@ static void url_decode_inplace(char *text)
   *dst = '\0';
 }
 
-/* Extract a named form field from the HTTP body. */
+/*
+ * get_param(body, key, out, out_size)
+ * 
+ * OBJECTIF: Extraire la valeur d'un paramètre nommé du corps HTTP POST (format: key1=val1&key2=val2&...)
+ * 
+ * PARAMÈTRES:
+ *  - body: chaîne POST (ex: "baud=19200&parity=0&stop_bits=1")
+ *  - key: nom du paramètre à chercher (ex: "baud")
+ *  - out: buffer de sortie pour la valeur
+ *  - out_size: taille max du buffer
+ * 
+ * RETOUR: 1 si trouvé, 0 sinon
+ * 
+ * MÉCANISME:
+ *  1. Cherche "key=" dans le body
+ *  2. Extrait la valeur jusqu'à '&' ou fin de chaîne
+ *  3. Décode l'URL (remplace %XX par caractères)
+ *  4. Supprime les espaces de fin (trim)
+ * 
+ * POURQUOI: Les requêtes POST contiennent plusieurs paramètres. On doit les extraire individuellement.
+ *           Par exemple, pour appliquer une config UART, on extrait baud, parity, stop_bits séparément.
+ * 
+ * UTILISATION: Appelée dans app_config_http_handle_save() pour lire chaque champ du formulaire.
+ * 
+ * SANS CETTE FONCTION: On ne pourrait pas lire les données du formulaire => Impossible de configurer le MCU via web.
+ */
 static int get_param(const char *body, const char *key, char *out, unsigned out_size)
 {
   char pattern[40];
@@ -92,7 +168,22 @@ static int get_param(const char *body, const char *key, char *out, unsigned out_
   return 1;
 }
 
-/* Skip leading whitespace before parsing a numeric string. */
+/*
+ * trim_left(text)
+ * 
+ * OBJECTIF: Sauter les espaces au début d'une chaîne (espace, tab, carriage return)
+ * 
+ * RETOUR: Pointeur vers le premier caractère non-espace
+ * 
+ * POURQUOI: Après extraction d'un paramètre, il peut y avoir des espaces. Cette fonction
+ *           aide à nettoyer la chaîne avant de vérifier si elle est vide ou invalide.
+ * 
+ * UTILISATION: Appelée par parse_ulong() pour vérifier qu'il n'y a pas de caractères
+ *              de fin après le nombre (validation stricte).
+ * 
+ * SANS CETTE FONCTION: parse_ulong() accepterait des chaînes avec des espaces au début
+ *                      (moins strict, mais probablement acceptable). Les validations seraient moins fiables.
+ */
 static char *trim_left(char *text)
 {
   while ((*text == ' ') || (*text == '\t') || (*text == '\r')) {
@@ -101,7 +192,31 @@ static char *trim_left(char *text)
   return text;
 }
 
-/* Parse an unsigned decimal number and reject trailing garbage. */
+/*
+ * parse_ulong(text, value)
+ * 
+ * OBJECTIF: Parser une chaîne décimale en nombre non-signé long avec validation stricte
+ * 
+ * PARAMÈTRES:
+ *  - text: chaîne à parser (ex: "19200")
+ *  - value: pointeur pour stocker le résultat
+ * 
+ * RETOUR: 1 si succès (nombre valide, pas de caractères de fin invalides), 0 sinon
+ * 
+ * VALIDATION STRICTE:
+ *  - Accepte seulement des chiffres décimaux
+ *  - Rejette si caractères de fin non-espaces (ex: "19200abc" -> rejeté)
+ *  - Réjectionnels les chaînes vides
+ * 
+ * POURQUOI: Les valeurs du formulaire (baud, adresse esclave, registre) doivent être des nombres valides.
+ *           Une validation stricte empêche les entrées malveillantes ou mal formatées.
+ * 
+ * UTILISATION: Appélée dans les actions POST (save_port, add_slave, add_register) pour valider
+ *              chaque champ numérique avant de l'utiliser.
+ * 
+ * SANS CETTE FONCTION: Les entrées non-numériques seraient acceptées par strtoul() direct
+ *                      => Comportements imprévisibles, erreurs de configuration => DANGEREUX.
+ */
 static int parse_ulong(const char *text, unsigned long *value)
 {
   char *endptr;
@@ -118,14 +233,49 @@ static int parse_ulong(const char *text, unsigned long *value)
   return 1;
 }
 
-/* Reset the reusable HTML response buffer. */
+/*
+ * page_reset()
+ * 
+ * OBJECTIF: Réinitialiser le buffer HTML global pour une nouvelle page
+ * 
+ * MÉCANISME:
+ *  - Réinitialise g_page_used à 0 (marque le buffer comme vide)
+ *  - Nettoit le premier caractère (null terminator)
+ * 
+ * POURQUOI: Chaque fois qu'on doit générer une nouvelle page (form, réponse statut),
+ *           on doit commencer avec un buffer vide. Sans cela, les anciennes données resteraient
+ *           et s'ajouteraient à la nouvelle page => corruption du contenu.
+ * 
+ * UTILISATION: Appelée au début de chaque fonction qui génère une page HTML
+ *              (app_config_http_send_form, send_status_page).
+ * 
+ * SANS CETTE FONCTION: Les pages s'accumuleraient les unes sur les autres
+ *                      => HTML invalide, affichage cassé dans le navigateur.
+ */
 static void page_reset(void)
 {
   g_page_used = 0u;
   g_app_config_page_buffer[0] = '\0';
 }
 
-/* Append raw text to the reusable HTML response buffer. */
+/*
+ * page_append(text)
+ * 
+ * OBJECTIF: Ajouter du texte brut au buffer HTML sans dépassement
+ * 
+ * MÉCANISME:
+ *  - Vérifie l'espace disponible dans le buffer (12000 octets total)
+ *  - Copie le texte avec memcpy (sécurisé)
+ *  - Accumule g_page_used (pointeur de fin)
+ * 
+ * POURQUOI: On doit construire la page HTML morceau par morceau (enêtes, balises, données).
+ *           Sans cette fonction, on devrait allouer/libérer mem pour chaque fragment.
+ *           Utiliser un buffer statique évite la fragmentation du heap en embedded.
+ * 
+ * UTILISATION: Appelée partout pour ajouter des éléments HTML (tags, texte litéral).
+ * 
+ * SANS CETTE FONCTION: Impossible de construire HTML => Pas de page web du tout.
+ */
 static void page_append(const char *text)
 {
   size_t text_len;
@@ -152,7 +302,25 @@ static void page_append(const char *text)
   }
 }
 
-/* Append a formatted string to the reusable HTML response buffer. */
+/*
+ * page_appendf(fmt, ...)
+ * 
+ * OBJECTIF: Ajouter du texte formaté (comme printf) au buffer HTML
+ * 
+ * MÉCANISME:
+ *  - Prend un format string et des arguments variables
+ *  - Utilise vsnprintf() pour formater dans un buffer temporaire local (320 octets)
+ *  - Appelle page_append() pour ajouter le résultat au buffer HTML
+ * 
+ * POURQUOI: On doit générer du HTML avec des valeurs dynamiques (addresses esclaves, baud rates).
+ *           page_appendf permet d'utiliser la syntaxe printf familierère pour construire le HTML.
+ * 
+ * UTILISATION: Appelée rarement dans ce fichier (la plupart utilise page_append direct).
+ *              Utile pour les étiquettes avec texte varié.
+ * 
+ * SANS CETTE FONCTION: Impossible de construire du HTML dynamique avec valeurs
+ *                      => Faudrait tout faire avec du texte statique => inflexible.
+ */
 static void page_appendf(const char *fmt, ...)
 {
   char line[320];
@@ -165,7 +333,26 @@ static void page_appendf(const char *fmt, ...)
   page_append(line);
 }
 
-/* Append an unsigned integer without using heap allocation. */
+/*
+ * page_append_uint(value)
+ * 
+ * OBJECTIF: Ajouter un nombre entier non-signé au buffer HTML sans utiliser sprintf
+ * 
+ * MÉCANISME:
+ *  - Décompose le nombre en chiffres (unitsés, dizianes, etc.) en inversant l'ordre
+ *  - Réassemble les chiffres dans le bon ordre et les ajoute au buffer
+ * 
+ * POURQUOI: Cette fonction est optimisée pour l'embedded:
+ *           - Pas d'appel à sprintf (lourd, peut utiliser beaucoup de stack)
+ *           - Opérations simples: division, modulo, caractères ASCII
+ *           - Utilisée fréquemment pour afficher adresses, valeurs, indices
+ * 
+ * UTILISATION: Appelée partout dans le rendu HTML pour afficher des nombres
+ *              (baud rate, slave address, register index, etc.).
+ * 
+ * SANS CETTE FONCTION: On devrait utiliser sprintf (coûteux) ou construire des strings manuellement
+ *                      => Code moins efficace, plus de consommation RAM/CPU.
+ */
 static void page_append_uint(unsigned long value)
 {
   char tmp[11];
@@ -191,7 +378,25 @@ static void page_append_uint(unsigned long value)
   }
 }
 
-/* Render the Modbus register type as short user-facing text. */
+/*
+ * register_type_to_text(t)
+ * 
+ * OBJECTIF: Convertir un type de registre Modbus (enum registerType_t) en chaîne de texte lisible
+ * 
+ * PARAMÈTRES:
+ *  - t: type de registre (REG_TYPE_U16, REG_TYPE_I16, REG_TYPE_FLOAT)
+ * 
+ * RETOUR: Pointeur vers une chaîne statique ("U16", "I16", "FLOAT")
+ * 
+ * POURQUOI: La page web affiche les types de registres sous forme de texte lisible pour l'utilisateur.
+ *           Cette fonction fait la traduction du code interne vers l'affichage.
+ * 
+ * UTILISATION: Appelée par render_register_section() pour afficher le type de chaque registre
+ *              dans le tableau HTML.
+ * 
+ * SANS CETTE FONCTION: Afficherait des nombres (0, 1, 2) au lieu de noms lisibles
+ *                      => L'utilisateur ne comprendrait pas quel type est actif.
+ */
 static const char *register_type_to_text(registerType_t t)
 {
   if (t == REG_TYPE_U16) {
@@ -203,7 +408,31 @@ static const char *register_type_to_text(registerType_t t)
   return "FLOAT";
 }
 
-/* Build and send a small status page after a POST action. */
+/*
+ * send_status_page(conn, ok, message)
+ * 
+ * OBJECTIF: Envoyer une page de statut simple au navigateur après une action POST
+ * 
+ * PARAMÈTRES:
+ *  - conn: connexion netconn (socket TCP)
+ *  - ok: 1 = succès (200 OK), 0 = échec (400 Bad Request)
+ *  - message: texte explicatif à afficher à l'utilisateur
+ * 
+ * MÉCANISME:
+ *  1. Réinitialise le buffer de page
+ *  2. Génère les en-têtes HTTP (statut, Content-Type)
+ *  3. Génère le corps HTML avec le message et un lien pour revenir à la config
+ *  4. Envoie le tout au client via netconn_write()
+ * 
+ * POURQUOI: Après chaque action (save_port, add_slave, etc.), le navigateur attend une réponse.
+ *           Au lieu de générer la page entière de config, on envoie un court message de statut.
+ *           C'est plus rapide et l'utilisateur a un feedback clair (succès ou erreur).
+ * 
+ * UTILISATION: Appelée dans app_config_http_handle_save() pour répondre à chaque action POST.
+ * 
+ * SANS CETTE FONCTION: Pas de feedback HTTP => Le navigateur attendrait le timeout
+ *                      => Mauvaise UX, l'utilisateur ne saurait pas si l'action a marche.
+ */
 static void send_status_page(struct netconn *conn, int ok, const char *message)
 {
   page_reset();
@@ -222,7 +451,31 @@ static void send_status_page(struct netconn *conn, int ok, const char *message)
   netconn_write(conn, g_app_config_page_buffer, g_page_used, NETCONN_COPY);
 }
 
-/* Render the UART port configuration section. */
+/*
+ * render_port_section()
+ * 
+ * OBJECTIF: Générer la section HTML de configuration du port UART dans la page Modbus config
+ * 
+ * MÉCANISME:
+ *  1. Affiche un titre <h2>Port</h2>
+ *  2. Crée un formulaire POST avec action="/save_modbus_config" et action="save_port"
+ *  3. Champs du formulaire:
+ *     - Dropdown pour choisir le port (PORT_ID_UART1, PORT_ID_UART2, etc.)
+ *     - Input pour le baud rate (ex: 9600, 19200)
+ *     - Input pour stop bits (1 ou 2)
+ *     - Input pour parity (0=None, 1=Even, 2=Odd)
+ *  4. Remplit les valeurs actuelles depuis appDb.ports[0]
+ *  5. Ajoute un bouton "Save port"
+ * 
+ * POURQUOI: L'utilisateur doit pouvoir configurer les paramètres UART (baud, parity, etc.)
+ *           via l'interface web. Cette fonction génère l'UI pour cela.
+ *           Une fois soumis, le POST est traité par app_config_http_handle_save().
+ * 
+ * UTILISATION: Appelée par app_config_http_send_form() pour construire la page complète.
+ * 
+ * SANS CETTE FONCTION: L'utilisateur ne pourrait pas changer baud/parity depuis le web
+ *                      => Faudrait ré-programmer le MCU pour chaque changement de config => IMPOSSIBLE.
+ */
 static void render_port_section(void)
 {
   uint8_t i;
@@ -268,7 +521,30 @@ static void render_port_section(void)
   }
 }
 
-/* Render the slave list and the add-slave form. */
+/*
+ * render_slave_section()
+ * 
+ * OBJECTIF: Générer la section HTML pour afficher/gérer les esclaves Modbus
+ * 
+ * MÉCANISME:
+ *  1. Affiche un titre <h2>Slaves</h2>
+ *  2. Crée un tableau HTML listant tous les esclaves actifs (appDb.slaveConfig[i].used == 1)
+ *     - Colonnes: Index, Address, Port, Registers, Action (Delete button)
+ *  3. Ajoute une section "Add slave" avec formulaire POST:
+ *     - Input pour l'adresse esclave (1..247)
+ *     - Dropdown pour le port UART
+ *  4. Bouton "Add slave"
+ * 
+ * POURQUOI: L'utilisateur doit pouvoir ajouter/supprimer des esclaves Modbus dynamiquement.
+ *           La liste affiche l'état actuel, et le formulaire permet l'ajout.
+ *           Chaque suppression appelle l'action "delete_slave" qui nettoie aussi les registres
+ *           associés (cascade cleanup).
+ * 
+ * UTILISATION: Appelée par app_config_http_send_form() pour construire la page complète.
+ * 
+ * SANS CETTE FONCTION: L'utilisateur ne pourrait pas créer de slaves sans ré-programmer le MCU
+ *                      => Fonctionnalité Modbus inaccessible depuis le web => INUTILE.
+ */
 static void render_slave_section(void)
 {
   uint8_t i;
@@ -317,7 +593,31 @@ static void render_slave_section(void)
   page_append("</select></label></p><p><button type=\"submit\">Add slave</button></p></form>");
 }
 
-/* Render the register list and the add-register form. */
+/*
+ * render_register_section()
+ * 
+ * OBJECTIF: Générer la section HTML pour afficher/gérer les registres Modbus des esclaves
+ * 
+ * MÉCANISME:
+ *  1. Affiche un titre <h2>Registers</h2>
+ *  2. Crée un tableau HTML listant tous les registres (parcourt esclaves et leurs registres)
+ *     - Colonnes: Slave index, Slave address, Register address, Type, Action (Delete button)
+ *     - N'affiche que les registres avec used == 1
+ *  3. Ajoute une section "Add register" avec formulaire POST:
+ *     - Dropdown pour choisir l'esclave
+ *     - Input pour l'adresse du registre (0..65535)
+ *     - Dropdown pour le type (U16, I16, FLOAT)
+ *  4. Message d'avertissement si aucun esclave n'existe
+ * 
+ * POURQUOI: Un esclave Modbus est inutile sans registres à lire/écrire. Cette fonction
+ *           permet à l'utilisateur de configurer les registres de chaque esclave via le web.
+ *           Chaque registre correspond à une adresse de holding register ou input register
+ *           que le master Modbus va interroger.\n *
+ * UTILISATION: Appelée par app_config_http_send_form() pour construire la page complète.
+ * 
+ * SANS CETTE FONCTION: L'utilisateur ne pourrait pas mapper les registres Modbus
+ *                      => Impossible de lire/écrire des données depuis le réseau => INUTILE.
+ */
 static void render_register_section(void)
 {
   uint8_t i;
@@ -394,7 +694,30 @@ static void render_register_section(void)
   page_append("<p><button type=\"submit\">Add register</button></p></form>");
 }
 
-/* Build the complete Modbus configuration page and send it to the client. */
+/*
+ * app_config_http_send_form(conn)
+ * 
+ * OBJECTIF: Construire et envoyer la page HTML complète de configuration Modbus au navigateur
+ * 
+ * PARAMÈTRES:
+ *  - conn: connexion netconn (socket TCP) vers le client
+ * 
+ * MÉCANISME:
+ *  1. Réinitialise le buffer HTML
+ *  2. Ajoute les en-têtes HTTP (statut 200, Content-Type: text/html, Connection: close)
+ *  3. Ajoute le squelette HTML (doctype, head, body)
+ *  4. Appelle les trois fonctions render_*_section() pour construire:
+ *     - Section Port (configuration UART)
+ *     - Section Slaves (liste + ajout)
+ *     - Section Registers (liste + ajout)
+ *  5. Ajoute des liens de navigation (vers network config, main page)
+ *  6. Envoie tout au client via netconn_write()
+ * 
+ * POURQUOI: C'est le point d'entrée principal pour générer la page de configuration Modbus.
+ *           Cette fonction est appelée quand le client demande /modbus_config.html\n *           Elle affiche l'état actuel de la config (ports, esclaves, registres) et
+ *           fournit les formulaires pour les modifier.\n *
+ * FLUX:\n *  - app_config_http_send_form() est appelée par le serveur HTTP (httpserver-netconn.c)
+ *           quand le client demande /modbus_config.html\n *  - Elle génère une page avec l'état actuel via les render_*_section()\n *  - Les utilisateurs peuvent remplir les formulaires et cliquer \"Submit\"\n *  - Les POSTs sont traités par app_config_http_handle_save()\n * \n * UTILISATION: Appelée directement par le serveur HTTP lwIP (netconn).\n * \n * SANS CETTE FONCTION: Pas de page de configuration web pour Modbus\n *                      => Les utilisateurs ne pourraient pas gérer les esclaves/registres\n *                      => PRODUIT INUTILISABLE.\n */
 void app_config_http_send_form(struct netconn *conn)
 {
   page_reset();
@@ -414,7 +737,15 @@ void app_config_http_send_form(struct netconn *conn)
   netconn_write(conn, g_app_config_page_buffer, g_page_used, NETCONN_COPY);
 }
 
-/* Handle every POST action for the Modbus configuration page. */
+/*
+ * app_config_http_handle_save(conn, request, request_len)
+ * 
+ * OBJECTIF: Traiter TOUS les POSTs (actions) de la page de configuration Modbus
+ * 
+ * PARAMÈTRES:
+ *  - conn: connexion netconn (socket TCP) vers le client\n *  - request: pointeur vers le corps HTTP POST complet (headers + body)\n *  - request_len: longueur totale du request (non utilisée, on cherche les délimiteurs)
+ * 
+ * ACTIONS SUPPORTÉES:\n * \n *  1. action=save_port\n *     Données du formulaire: baud, stop_bits, parity, port_id\n *     Comportement:\n *       a. Extrait et parse baud (0..2000000), stop_bits (1 ou 2), parity (0,1,2)\n *       b. Valide que port_id < MAX_UART_PORTS\n *       c. Appelle appConfig_updatePort() pour appliquer la config UART:\n *          - Prend mutex\n *          - Snapshot RAM et hardware\n *          - Appelle rs485_interface_apply_config() pour changer hardware (HAL)\n *          - Sur succès: appelle modbusMaster_onUartReconfig() et persiste\n *          - Sur erreur: restaure avec rs485_interface_restore_config()\n *       d. Envoie page de statut (succès ou erreur)\n *\n *  2. action=add_slave\n *     Données du formulaire: slave_address (1..247), slave_port (UART index)\n *     Comportement:\n *       a. Extrait et parse slave_address et slave_port\n *       b. Valide ranges (address 1-247, port < MAX_UART_PORTS)\n *       c. Appelle appConfig_addSlave() pour ajouter esclave à la DB RAM\n *       d. Appelle appConfig_save() pour persister en Flash\n *       e. Envoie page de statut\n *\n *  3. action=delete_slave\n *     Données du formulaire: slave_index (index dans appDb.slaveConfig[])\n *     Comportement:\n *       a. Extrait et parse slave_index\n *       b. Appelle appConfig_removeSlave() qui:\n *          - Marque l'esclave comme unused\n *          - NETTOIE AUSSI tous ses registres (cascade cleanup) ==> TRÈS IMPORTANT\n *       c. Appelle appConfig_save() pour persister\n *       d. Envoie page de statut\n *\n *  4. action=add_register\n *     Données du formulaire: reg_slave_index, reg_address (0..65535), reg_type (0=U16, 1=I16, 2=FLOAT)\n *     Comportement:\n *       a. Extrait et parse tous les champs\n *       b. Valide ranges et que l'esclave existe et n'est pas plein\n *       c. Appelle appConfig_addRegister() pour ajouter registre à la DB\n *       d. Appelle appConfig_save() pour persister\n *       e. Envoie page de statut\n *\n *  5. action=delete_register\n *     Données du formulaire: reg_slave_index, reg_address\n *     Comportement:\n *       a. Extrait et parse les deux champs\n *       b. Appelle appConfig_removeRegister() pour supprimer le registre\n *       c. Appelle appConfig_save() pour persister\n *       d. Envoie page de statut\n *\n * FLUX HTTP:\n *  1. Cherche le corps HTTP après \"\\r\\n\\r\\n\" (délimiteur headers/body)\n *  2. Appelle get_param() pour extraire les champs du formulaire\n *  3. Parse les valeurs numériques avec parse_ulong()\n *  4. Valide les champs avec des checks simples (range, format)\n *  5. Appelle la fonction app_config_* appropriée\n *  6. Envoie une page de statut (200 OK + message si succès, 400 Bad Request + message si erreur)\n *\n * POURQUOI:\n *  - Centre TOUTES les actions POST au même endroit => Facile à maintenir\n *  - Chaque action est validée (types, ranges) => Évite les données invalides en Flash\n *  - Sauvegarde en Flash après chaque action => Persistance immédiate\n *  - Application hardware (save_port) via appConfig_updatePort() => Changements réels sur MCU\n *  - Cascade cleanup (delete_slave nettoie registres) => Pas de données orphelines\n *\n * SANS CETTE FONCTION:\n *  - Les POSTs du formulaire ne seraient pas traités => Rien ne changerait\n *  - Impossible de configurer Modbus depuis le web => PRODUIT INUTILE\n */
 void app_config_http_handle_save(struct netconn *conn, const char *request, unsigned short request_len)
 {
   const char *body;
