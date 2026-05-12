@@ -57,62 +57,27 @@ static const char SAVE_BAD_REQUEST[] =
 "<p><a href=\"/config.html\">Back to configuration page</a></p>"
 "</body></html>";
 
-static int parse_octet(const char *start, const char **next)
-{
-  unsigned value = 0;
-  int digits = 0;
-  const char *p = start;
-
-  while ((*p >= '0') && (*p <= '9')) {
-    value = (value * 10u) + (unsigned)(*p - '0');
-    if (value > 255u) {
-      return -1;
-    }
-    p++;
-    digits++;
-  }
-
-  if (digits == 0) {
-    return -1;
-  }
-
-  *next = p;
-  return (int)value;
-}
-
 static int parse_ipv4(const char *text, uint8_t out[4])
 {
-  const char *p = text;
-  const char *next = text;
-  int i;
-  int octet;
+  unsigned a;
+  unsigned b;
+  unsigned c;
+  unsigned d;
 
-  /* Allow leading spaces/tabs from user input and browser encoding quirks. */
-  while ((*p == ' ') || (*p == '\t')) {
-    p++;
+  /* Keep this parser short and strict enough for normal IPv4 input. */
+  if (sscanf(text, " %u.%u.%u.%u ", &a, &b, &c, &d) != 4) {
+    return 0;
   }
 
-  for (i = 0; i < 4; i++) {
-    octet = parse_octet(p, &next);
-    if (octet < 0) {
-      return 0;
-    }
-    out[i] = (uint8_t)octet;
-    p = next;
-    if (i < 3) {
-      if (*p != '.') {
-        return 0;
-      }
-      p++;
-    }
+  if ((a > 255u) || (b > 255u) || (c > 255u) || (d > 255u)) {
+    return 0;
   }
 
-  while ((*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n')) {
-    p++;
-  }
-
-  /* Only valid if nothing but trailing whitespace remains. */
-  return (*p == '\0') ? 1 : 0;
+  out[0] = (uint8_t)a;
+  out[1] = (uint8_t)b;
+  out[2] = (uint8_t)c;
+  out[3] = (uint8_t)d;
+  return 1;
 }
 
 static int hex_to_nibble(char c)

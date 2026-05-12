@@ -96,7 +96,7 @@ int appConfig_removeSlave(uint8_t slaveIndex);
 int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t registerType);
 int appConfig_removeRegister(uint8_t slaveIndex, uint16_t regAddress);
 
-int appConfig_updatePort(uartPortId_t portId,uint32_t baudRate,uint8_t sotpBits,parityType_t parity);
+int appConfig_updatePort(uartPortId_t portId, uint32_t baudRate, uint8_t stopBits, parityType_t parity);
 
 
 

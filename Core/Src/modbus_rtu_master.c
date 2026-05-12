@@ -58,6 +58,23 @@ void modbusMaster_init(void)
 
 }
 
+/*
+ * ROLE:
+ *  Hook called when UART parameters changed (baud/parity/stop bits).
+ *
+ * WHY:
+ *  Ongoing Modbus transaction state may be invalid after UART timing changes.
+ *
+ * ACTION:
+ *  Reinitialize the master state machine to a clean IDLE state.
+ */
+void modbusMaster_onUartReconfig(void)
+{
+	/* A UART change can leave the master in the middle of a transaction. */
+	/* The simplest safe action is to reset its internal state. */
+	modbusMaster_init();
+}
+
 
 HAL_StatusTypeDef modbusMaster_readHoldingRegister(uint8_t slaveAddress ,uint16_t firstRegister,uint16_t registerCount )
 {

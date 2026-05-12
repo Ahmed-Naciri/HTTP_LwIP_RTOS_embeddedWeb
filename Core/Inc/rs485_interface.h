@@ -15,7 +15,12 @@
 void rs485_interface_init(void);
 void rs485_interface_enableTxMode(void);
 void rs485_interface_enableRxMode(void);
-//HAL_StatusTypeDef rs485_interface_apply_config(uint32_t baudRate, uint8_t stopBits, parityType_t parity);
+/* Save the current UART hardware state so we can restore it later if needed. */
+UART_InitTypeDef rs485_uart_get_current_config(void);
+/* Apply a new UART configuration to the real hardware. */
+HAL_StatusTypeDef rs485_interface_apply_config(uint32_t baudRate, uint8_t stopBits, parityType_t parity, uint32_t timeout_ms);
+/* Restore the previous UART hardware state after a failed reconfiguration. */
+HAL_StatusTypeDef rs485_interface_restore_config(UART_InitTypeDef previousHw);
 
 
 HAL_StatusTypeDef rs485_interface_send(uint8_t* Txbuffer, uint16_t TxbufferLength);

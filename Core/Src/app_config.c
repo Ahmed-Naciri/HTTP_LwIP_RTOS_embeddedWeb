@@ -6,6 +6,10 @@
  */
 #include "app_config.h"
 
+/* The master must be reset when the UART changes. */
+#include "modbus_rtu_master.h"
+/* The UART layer applies the real hardware settings and can roll them back. */
+#include "rs485_interface.h"
 #include "persistent_store.h"
 
 
@@ -141,6 +145,17 @@ bool appConfig_isValid(const appDataBase_t* db)
 
 }
 
+/*
+ * ROLE:
+ *  Load configuration from Flash into RAM, then re-apply UART settings to hardware.
+ *
+ * UART + FLASH FLOW:
+ *  1) Start from defaults in RAM.
+ *  2) Try loading saved DB from Flash.
+ *  3) Validate loaded content.
+ *  4) Copy valid data to appDb (RAM).
+ *  5) Apply saved UART setup on real hardware so RAM and hardware match.
+ */
 void appConfig_load(void)
 {
 	appDataBase_t loaded;
@@ -159,9 +174,22 @@ void appConfig_load(void)
 	}
 
 	appDb = loaded;
+	/* Re-apply the saved UART settings so the hardware matches RAM after boot. */
+	if (MAX_UART_PORTS > 0u)
+	{
+		(void)appConfig_updatePort(appDb.ports[0].portId, appDb.ports[0].baudRate,
+							   appDb.ports[0].stopBits, appDb.ports[0].parity);
+	}
 
 }
 
+/*
+ * ROLE:
+ *  Save current RAM database (appDb) into Flash.
+ *
+ * NOTE:
+ *  Save is allowed only if appDb is valid, to avoid persisting corrupted data.
+ */
 int appConfig_save(void)
 {
 	if (!appConfig_isValid(&appDb))
@@ -336,18 +364,62 @@ int appConfig_removeRegister(uint8_t slaveIndex, uint16_t regAddress)
 }
 
 
-int appConfig_updatePort(uartPortId_t portId,uint32_t baudRate,uint8_t sotpBits,parityType_t parity)
+/*
+ * ROLE:
+ *  Update UART configuration safely in both hardware and RAM.
+ *
+ * SAFE UPDATE SEQUENCE:
+ *  1) Validate new values.
+ *  2) Snapshot old RAM config and old hardware UART config.
+ *  3) Try hardware apply first.
+ *  4) If hardware apply fails: rollback hardware + rollback RAM.
+ *  5) If success: commit new values in RAM and reset Modbus state.
+ *
+ * IMPORTANT:
+ *  This function does NOT write Flash directly.
+ *  Persistence is done by calling appConfig_save() after success.
+ */
+int appConfig_updatePort(uartPortId_t portId, uint32_t baudRate, uint8_t stopBits, parityType_t parity)
 {
-	if(portId >= MAX_UART_PORTS)
+	portConfig_t previousRam;
+	UART_InitTypeDef previousHw;
+	HAL_StatusTypeDef hwStatus;
+
+	/* Keep only one UART in this project, so the port index must stay in range. */
+	if ((portId >= MAX_UART_PORTS) || (baudRate == 0u) || (baudRate > 2000000u) ||
+		((stopBits != 1u) && (stopBits != 2u)) || (parity > PARITY_ODD))
 	{
 		return -1;
 	}
 
-	appDb.ports[portId].used = 1;
+	/* Save the old RAM config in case we need to go back. */
+	previousRam = appDb.ports[portId];
+	/* Save the old hardware config so rollback is possible. */
+	previousHw = rs485_uart_get_current_config();
+
+	/* Try to apply the new UART settings on the real hardware first. */
+	hwStatus = rs485_interface_apply_config(baudRate, stopBits, parity, 1000u);
+	if (hwStatus != HAL_OK)
+	{
+		/* If the update fails, restore the old hardware and old RAM state. */
+		(void)rs485_interface_restore_config(previousHw);
+		appDb.ports[portId] = previousRam;
+		return -2;
+	}
+
+	/* Mark the port as used in RAM. */
+	appDb.ports[portId].used = 1u;
+	/* Store the selected port index. */
 	appDb.ports[portId].portId = portId;
+	/* Store the new speed. */
 	appDb.ports[portId].baudRate = baudRate;
-	appDb.ports[portId].stopBits = sotpBits;
+	/* Store the new stop bits. */
+	appDb.ports[portId].stopBits = stopBits;
+	/* Store the new parity. */
 	appDb.ports[portId].parity = parity;
+
+	/* Reset the Modbus master because the serial link changed. */
+	modbusMaster_onUartReconfig();
 
 	return 0;
 

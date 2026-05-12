@@ -9,6 +9,68 @@
 #include <string.h>
 
 /*
+ * --- Bibliothèque C et fonctions externes utilisées dans ce fichier ---
+ *
+ * Ce bloc explique rapidement le rôle des fonctions standard utilisées ci-dessous
+ * et donne un exemple court pour chaque cas. Les exemples montrent l'effet
+ * attendu (entrée -> sortie) et peuvent être copiés dans un petit programme
+ * de test si besoin.
+ *
+ * 1) snprintf(char *str, size_t size, const char *fmt, ...)
+ *    - Fonction sûre pour écrire formaté dans un buffer en limitant la taille.
+ *    - Retourne le nombre total de caractères qui auraient été écrits (sans
+ *      compter le terminator) ; si >= size, la sortie a été tronquée.
+ *    - Exemple:
+ *      char b[8];
+ *      int n = snprintf(b, sizeof(b), "%s=%d", "x", 123);
+ *      // b == "x=123"  (n == 5)
+ *
+ * 2) strstr(const char *haystack, const char *needle)
+ *    - Cherche la première occurrence de "needle" dans "haystack" et retourne
+ *      un pointeur vers cette position, ou NULL si non trouvé.
+ *    - Exemple:
+ *      const char *s = "a=1&b=2";
+ *      const char *p = strstr(s, "b=");
+ *      // p pointe sur "b=2"
+ *
+ * 3) strlen(const char *s)
+ *    - Retourne la longueur (en octets) d'une chaîne C terminée par '\0'.
+ *    - Exemple: strlen("abc") == 3
+ *
+ * 4) memcpy(void *dest, const void *src, size_t n)
+ *    - Copie exactement n octets de src vers dest. Ne gère PAS le chevauchement
+ *      (utiliser memmove si chevauchement possible).
+ *    - Exemple:
+ *      char a[4] = "abc"; memcpy(&a[1], "Z", 1); // a == "aZc"
+ *
+ * 5) strtoul(const char *nptr, char **endptr, int base)
+ *    - Convertit une chaîne en unsigned long ; place en *endptr le pointeur
+ *      vers le premier caractère non converti. Utilisé ici pour valider que
+ *      toute la chaîne est bien un nombre.
+ *    - Exemple:
+ *      char *e; unsigned long v = strtoul("123", &e, 10); // v==123, *e=='\0'
+ *
+ * 6) strcmp(const char *s1, const char *s2)
+ *    - Compare deux chaînes ; retourne 0 si égales, <0 si s1<s2, >0 si s1>s2
+ *    - Exemple: strcmp("ok","ok") == 0
+ *
+ * 7) netconn_write(struct netconn *conn, const void *dataptr, size_t size, int apiflags)
+ *    - (lwIP) Envoie des octets sur une connexion netconn. Ici utilisé pour
+ *      écrire le buffer HTTP complet vers le socket TCP. Comportement dépend
+ *      de la pile lwIP utilisée.
+ *    - Exemple (conceptuel): netconn_write(conn, buffer, len, NETCONN_COPY);
+ *
+ * Notes de sécurité et bonnes pratiques:
+ * - Toujours fournir des tailles correctes à snprintf pour éviter les
+ *   débordements. Vérifier le code de retour si nécessaire.
+ * - Quand on copie des octets avec memcpy s'assurer que le buffer destination
+ *   a la taille suffisante (ici g_app_config_page_buffer est dimensionné large).
+ * - Pour valider une conversion numérique, utiliser strtoul + vérification de
+ *   endptr (comme fait dans parse_ulong) plutôt que atoi/atol qui n'ont pas
+ *   de signal d'erreur fiable.
+ */
+
+/*
  * FICHIER: app_config_http.c
  * OBJECTIF: Gérer l'interface HTTP pour la configuration Modbus RTU
  * 
@@ -33,7 +95,7 @@ static char g_app_config_page_buffer[12000];
 static size_t g_page_used = 0u;
 
 /*
- * hex_to_nibble(c)
+ * hex_to_nibble(c) . note that nibble is a 4-bit value (0-15) that represents a single hex digit(0-F).
  * 
  * OBJECTIF: Convertir un caractère hexadécimal ('0'-'9', 'A'-'F', 'a'-'f') en sa valeur numérique (0-15)
  * 
@@ -96,7 +158,7 @@ static void url_decode_inplace(char *text)
         *dst++ = (char)((hi << 4) | lo);
         src += 3;
       } else {
-        *dst++ = *src++;
+        *dst++ = *src++; 
       }
     } else {
       *dst++ = *src++;
@@ -191,7 +253,6 @@ static char *trim_left(char *text)
   }
   return text;
 }
-
 /*
  * parse_ulong(text, value)
  * 
@@ -233,6 +294,17 @@ static int parse_ulong(const char *text, unsigned long *value)
   return 1;
 }
 
+/* Read one POST field and parse it as an unsigned number. */
+static int read_unsigned_field(const char *body, const char *key, char *text, unsigned text_size,
+							   unsigned long *value)
+{
+  if (!get_param(body, key, text, text_size)) {
+    return 0;
+  }
+
+  return parse_ulong(text, value);
+}
+
 /*
  * page_reset()
  * 
@@ -251,11 +323,12 @@ static int parse_ulong(const char *text, unsigned long *value)
  * 
  * SANS CETTE FONCTION: Les pages s'accumuleraient les unes sur les autres
  *                      => HTML invalide, affichage cassé dans le navigateur.
+ *
  */
 static void page_reset(void)
 {
   g_page_used = 0u;
-  g_app_config_page_buffer[0] = '\0';
+  g_app_config_page_buffer[0] = '\0'; 
 }
 
 /*
@@ -300,37 +373,6 @@ static void page_append(const char *text)
     g_page_used += text_len;
     g_app_config_page_buffer[g_page_used] = '\0';
   }
-}
-
-/*
- * page_appendf(fmt, ...)
- * 
- * OBJECTIF: Ajouter du texte formaté (comme printf) au buffer HTML
- * 
- * MÉCANISME:
- *  - Prend un format string et des arguments variables
- *  - Utilise vsnprintf() pour formater dans un buffer temporaire local (320 octets)
- *  - Appelle page_append() pour ajouter le résultat au buffer HTML
- * 
- * POURQUOI: On doit générer du HTML avec des valeurs dynamiques (addresses esclaves, baud rates).
- *           page_appendf permet d'utiliser la syntaxe printf familierère pour construire le HTML.
- * 
- * UTILISATION: Appelée rarement dans ce fichier (la plupart utilise page_append direct).
- *              Utile pour les étiquettes avec texte varié.
- * 
- * SANS CETTE FONCTION: Impossible de construire du HTML dynamique avec valeurs
- *                      => Faudrait tout faire avec du texte statique => inflexible.
- */
-static void page_appendf(const char *fmt, ...)
-{
-  char line[320];
-  va_list args;
-
-  va_start(args, fmt);
-  (void)vsnprintf(line, sizeof(line), fmt, args);
-  va_end(args);
-
-  page_append(line);
 }
 
 /*
@@ -451,6 +493,46 @@ static void send_status_page(struct netconn *conn, int ok, const char *message)
   netconn_write(conn, g_app_config_page_buffer, g_page_used, NETCONN_COPY);
 }
 
+/* Handle only the UART save action so the main POST handler stays short. */
+static void handle_save_port(struct netconn *conn, const char *body)
+{
+  char v_baud[20];
+  char v_stop[8];
+  char v_parity[8];
+  char v_port[8];
+  unsigned long baud;
+  unsigned long stop_bits;
+  unsigned long parity;
+  unsigned long port_id;
+
+  if ((!read_unsigned_field(body, "baud", v_baud, sizeof(v_baud), &baud)) ||
+	  (!read_unsigned_field(body, "stop_bits", v_stop, sizeof(v_stop), &stop_bits)) ||
+	  (!read_unsigned_field(body, "parity", v_parity, sizeof(v_parity), &parity)) ||
+	  (!read_unsigned_field(body, "port_id", v_port, sizeof(v_port), &port_id))) {
+    send_status_page(conn, 0, "Port fields are missing or invalid");
+    return;
+  }
+
+  if ((port_id >= (unsigned long)MAX_UART_PORTS) || (baud == 0ul) || (baud > 2000000ul) ||
+	  ((stop_bits != 1ul) && (stop_bits != 2ul)) || (parity > (unsigned long)PARITY_ODD)) {
+    send_status_page(conn, 0, "Port values are out of range");
+    return;
+  }
+
+  if (appConfig_updatePort((uartPortId_t)port_id, (uint32_t)baud, (uint8_t)stop_bits,
+					   (parityType_t)parity) < 0) {
+    send_status_page(conn, 0, "Port update failed");
+    return;
+  }
+
+  if (appConfig_save() < 0) {
+    send_status_page(conn, 0, "Save failed after port update");
+    return;
+  }
+
+  send_status_page(conn, 1, "Port updated and saved");
+}
+
 /*
  * render_port_section()
  * 
@@ -494,7 +576,7 @@ static void render_port_section(void)
     page_append("<option value=\"");
     page_append_uint((unsigned long)i);
     page_append("\" ");
-    if (appDb.ports[0].portId == (uartPortId_t)i) {
+    if (appDb.ports[0].portId == (uartPortId_t)i) { 
       page_append("selected");
     }
     page_append(">UART");
@@ -774,46 +856,7 @@ void app_config_http_handle_save(struct netconn *conn, const char *request, unsi
   }
 
   if (strcmp(action, "save_port") == 0) {
-    char v_baud[20];
-    char v_stop[8];
-    char v_parity[8];
-    char v_port[8];
-    unsigned long baud;
-    unsigned long stop_bits;
-    unsigned long parity;
-    unsigned long port_id;
-
-    if ((!get_param(body, "baud", v_baud, sizeof(v_baud))) ||
-        (!get_param(body, "stop_bits", v_stop, sizeof(v_stop))) ||
-        (!get_param(body, "parity", v_parity, sizeof(v_parity))) ||
-        (!get_param(body, "port_id", v_port, sizeof(v_port)))) {
-      send_status_page(conn, 0, "Port fields are missing");
-      return;
-    }
-
-    if ((!parse_ulong(v_baud, &baud)) || (!parse_ulong(v_stop, &stop_bits)) ||
-        (!parse_ulong(v_parity, &parity))) {
-      send_status_page(conn, 0, "Port fields are invalid numbers");
-      return;
-    }
-
-    if (!parse_ulong(v_port, &port_id)) {
-      send_status_page(conn, 0, "Port id is invalid");
-      return;
-    }
-
-    if ((port_id >= (unsigned long)MAX_UART_PORTS) || (baud == 0ul) || (baud > 2000000ul) ||
-        ((stop_bits != 1ul) && (stop_bits != 2ul)) || (parity > (unsigned long)PARITY_ODD) ||
-        (appConfig_updatePort((uartPortId_t)port_id, (uint32_t)baud, (uint8_t)stop_bits,
-                              (parityType_t)parity) < 0)) {
-      send_status_page(conn, 0, "Port update failed");
-      return;
-    }
-    if (appConfig_save() < 0) {
-      send_status_page(conn, 0, "Save failed after port update");
-      return;
-    }
-    send_status_page(conn, 1, "Port updated and saved");
+    handle_save_port(conn, body);
     return;
   }
 
