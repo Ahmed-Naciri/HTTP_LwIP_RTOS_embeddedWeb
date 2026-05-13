@@ -819,6 +819,81 @@ void app_config_http_send_form(struct netconn *conn)
   netconn_write(conn, g_app_config_page_buffer, g_page_used, NETCONN_COPY);
 }
 
+/* Helper: append float value with fixed precision without using printf float support */
+static void page_append_float(float v)
+{
+  int neg = 0;
+  if (v < 0.0f) {
+    neg = 1;
+    v = -v;
+  }
+
+  unsigned long ip = (unsigned long)v;
+  float fracf = v - (float)ip;
+  unsigned long frac = (unsigned long)(fracf * 1000.0f + 0.5f);
+  if (frac >= 1000u) {
+    ip += 1u;
+    frac -= 1000u;
+  }
+
+  if (neg) {
+    page_append("-");
+  }
+
+  page_append_uint(ip);
+  page_append(".");
+
+  char fbuf[4];
+  fbuf[0] = '0' + (char)((frac / 100u) % 10u);
+  fbuf[1] = '0' + (char)((frac / 10u) % 10u);
+  fbuf[2] = '0' + (char)(frac % 10u);
+  fbuf[3] = '\0';
+  page_append(fbuf);
+}
+
+/* Debug page: show lastValue and valid flags for all configured registers */
+void app_config_http_send_values(struct netconn *conn)
+{
+  uint8_t i, j;
+
+  page_reset();
+  page_append("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n");
+  page_append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Modbus Values</title></head>");
+  page_append("<body style=\"font-family:Arial,sans-serif;max-width:980px;margin:20px auto;\">\n");
+  page_append("<h1>Modbus Values (debug)</h1>");
+
+  page_append("<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">\n");
+  page_append("<tr><th>Slave idx</th><th>Slave addr</th><th>Reg addr</th><th>Type</th><th>Last value</th><th>Valid</th></tr>\n");
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
+          page_append("<tr><td>");
+          page_append_uint((unsigned long)i);
+          page_append("</td><td>");
+          page_append_uint((unsigned long)appDb.slaveConfig[i].slaveAddress);
+          page_append("</td><td>");
+          page_append_uint((unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+          page_append("</td><td>");
+          page_append(register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
+          page_append("</td><td>");
+          page_append_float(appDb.slaveConfig[i].registerConfig[j].lastValue);
+          page_append("</td><td>");
+          page_append(appDb.slaveConfig[i].registerConfig[j].valid ? "yes" : "no");
+          page_append("</td></tr>\n");
+        }
+      }
+    }
+  }
+
+  page_append("</table>\n");
+  page_append("<p><a href=\"/modbus_config.html\">Back to Modbus configuration</a></p>");
+  page_append("</body></html>\n");
+
+  netconn_write(conn, g_app_config_page_buffer, g_page_used, NETCONN_COPY);
+}
+
 /*
  * app_config_http_handle_save(conn, request, request_len)
  * 

@@ -12,6 +12,7 @@
   * This software is licensed under terms that can be found in the LICENSE file
   * in the root directory of this software component.
   * If no LICENSE file comes with this software, it is provided AS-IS.
+  * LastGoRun
   *
   ******************************************************************************
   */
@@ -23,6 +24,7 @@
 #include "httpserver-netconn.h"
 #include "app_config.h"
 #include "network_config.h"
+#include "polling_engine.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -350,9 +352,13 @@ void StartDefaultTask(void *argument)
   /* 3) Start the HTTP server thread after networking is initialized. */
   http_server_netconn_init();//The server uses the Netconn API of LwIP.
   /* USER CODE BEGIN 5 */
+  /* 4) Initialize polling engine for Modbus master periodic task */
+  pollingEngine_init();
   /* Infinite loop */
   for(;;)
   {
+    /* Run Modbus slave polling loop (iterate slaves/registers and issue reads) */
+    pollingEngine_task();
     osDelay(1);
   }
   /* USER CODE END 5 */

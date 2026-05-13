@@ -6,4 +6,6 @@
 void app_config_http_send_form(struct netconn *conn);
 void app_config_http_handle_save(struct netconn *conn, const char *request, unsigned short request_len);
 
+void app_config_http_send_values(struct netconn *conn);
+
 #endif

@@ -77,15 +77,7 @@ static const char TEST_PAGE[] =
 "<p>If you can read this, the STM32 HTTP server path is working.</p>"
 "</body></html>";
 
-static const char TEST_PAGE_1[] =
-"HTTP/1.1 200 OK\r\n"
-"Content-Type: text/html\r\n"
-"Connection: close\r\n"
-"\r\n"
-"<!doctype html><html><head><meta charset=\"utf-8\"><title>ETH Test</title></head>"
-"<body style=\"font-family:Arial,sans-serif\"><h1>ETH OK</h1>"
-"<p>If you can read this, the STM32 HTTP server path is working anyway hhhhh.</p>"
-"</body></html>";
+
 
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
@@ -180,15 +172,16 @@ static void http_server_serve(struct netconn *conn)
         {
           app_config_http_send_form(conn);
         }
+        else if (strncmp(g_http_request_buffer, "GET /modbus_values.html", 23) == 0)
+        {
+          app_config_http_send_values(conn);
+        }
         else if ((strncmp(g_http_request_buffer, "GET /test ", 10) == 0) ||
                  (strncmp(g_http_request_buffer, "GET / ", 6) == 0))
         {
           netconn_write(conn, TEST_PAGE, strlen(TEST_PAGE), NETCONN_COPY);
         }
-        else
-        {
-          netconn_write(conn, TEST_PAGE_1, strlen(TEST_PAGE_1), NETCONN_COPY);
-        }
+        
       }
     }
   }

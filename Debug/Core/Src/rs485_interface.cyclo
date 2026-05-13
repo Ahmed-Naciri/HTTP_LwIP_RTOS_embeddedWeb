@@ -1,5 +1,8 @@
-../Core/Src/rs485_interface.c:48:6:rs485_interface_init	1
-../Core/Src/rs485_interface.c:53:6:rs485_interface_enableTxMode	1
-../Core/Src/rs485_interface.c:60:6:rs485_interface_enableRxMode	1
-../Core/Src/rs485_interface.c:65:19:rs485_interface_send	1
-../Core/Src/rs485_interface.c:73:19:rs485_interface_receive	1
+../Core/Src/rs485_interface.c:23:18:rs485_uart_get_current_config	1
+../Core/Src/rs485_interface.c:43:19:rs485_interface_apply_config	12
+../Core/Src/rs485_interface.c:107:19:rs485_interface_restore_config	3
+../Core/Src/rs485_interface.c:134:6:rs485_interface_init	1
+../Core/Src/rs485_interface.c:139:6:rs485_interface_enableTxMode	1
+../Core/Src/rs485_interface.c:146:6:rs485_interface_enableRxMode	1
+../Core/Src/rs485_interface.c:151:19:rs485_interface_send	1
+../Core/Src/rs485_interface.c:159:19:rs485_interface_receive	1
