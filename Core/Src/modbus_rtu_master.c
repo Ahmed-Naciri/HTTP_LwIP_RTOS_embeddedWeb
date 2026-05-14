@@ -14,6 +14,9 @@ static uint8_t modbusMasterResponse[MODBUS_MAX_RESPONSE_LENGHT];
 static modbusMasterStatus_t modbusMasterStatus = MODBUS_MASTER_IDLE;
 static uint16_t modbusExpectedResponseLength = 0;
 static uint16_t modbusLastRegisterValue = 0;
+// static uint32_t modbusRequestStartTick = 0u;
+
+// #define MODBUS_TIMEOUT_LIMIT_MS 2000u
 
 extern UART_HandleTypeDef huart3;
 
@@ -52,6 +55,7 @@ void modbusMaster_init(void)
 	modbusMasterStatus = MODBUS_MASTER_IDLE;
 	modbusExpectedResponseLength=0;
 	modbusLastRegisterValue =0 ;
+	//modbusRequestStartTick = 0u;
 
 	memset(modbusMasterRequest,0,sizeof(modbusMasterRequest));
 	memset(modbusMasterResponse,0,sizeof(modbusMasterResponse));
@@ -109,6 +113,7 @@ HAL_StatusTypeDef modbusMaster_readHoldingRegister(uint8_t slaveAddress ,uint16_
     modbusMasterRequest[7] = (crcValue >> 8) & 0xff;
 
     modbusExpectedResponseLength=5+ (2*registerCount);
+	//modbusRequestStartTick = HAL_GetTick();
 
 
     memset(modbusMasterResponse,0,sizeof(modbusMasterResponse));
@@ -179,14 +184,34 @@ void modbusMaster_cpltCallBack(UART_HandleTypeDef* huart)
   if(calculatedCrc != receivedCrc)
   {
 	  modbusMasterStatus = MODBUS_MASTER_ERROR;
+		  //modbusRequestStartTick = 0u;
 	  return;
   }
   modbusLastRegisterValue = ((uint16_t)modbusMasterResponse[3] << 8) | modbusMasterResponse[4];
   modbusMasterStatus = MODBUS_MASTER_RESPONSE_READY;
-
-
+	//modbusRequestStartTick = 0u;
 
 }
+// void modbusMaster_tickTimeout(void)
+// {
+// 	/* Kept for compatibility with older code paths. Timeout is now tick-based. */
+// }
+
+// void modbusMaster_checkTimeout(void)
+// {
+// 	if (modbusMasterStatus == MODBUS_MASTER_WAITING_RESPONSE)
+//     {
+// 		if ((modbusRequestStartTick != 0u) && ((HAL_GetTick() - modbusRequestStartTick) >= MODBUS_TIMEOUT_LIMIT_MS))
+//         {
+//             modbusMasterStatus = MODBUS_MASTER_TIMEOUT;
+// 			modbusRequestStartTick = 0u;
+//         }
+//     }
+//     else
+//     {
+// 		modbusRequestStartTick = 0u;
+//     }
+// }
 
 
 

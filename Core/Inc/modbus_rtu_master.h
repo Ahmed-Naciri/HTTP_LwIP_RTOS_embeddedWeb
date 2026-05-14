@@ -34,5 +34,8 @@ void modbusMaster_cpltCallBack(UART_HandleTypeDef* huart);
  */
 void modbusMaster_onUartReconfig(void);
 
+// void modbusMaster_tickTimeout(void);
+// void modbusMaster_checkTimeout(void);
+
 
 #endif /* INC_MODBUS_RTU_MASTER_H_ */

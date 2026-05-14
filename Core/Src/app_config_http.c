@@ -812,6 +812,7 @@ void app_config_http_send_form(struct netconn *conn)
   render_slave_section();
   render_register_section();
 
+  page_append("<p><a href=\"/modbus_values.html\">display modbus values</a></p>");
   page_append("<p><a href=\"/config.html\">Network config</a></p>");
   page_append("<p><a href=\"/\">Back to main page</a></p>");
   page_append("</body></html>");
@@ -860,7 +861,7 @@ void app_config_http_send_values(struct netconn *conn)
   page_append("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n");
   page_append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Modbus Values</title></head>");
   page_append("<body style=\"font-family:Arial,sans-serif;max-width:980px;margin:20px auto;\">\n");
-  page_append("<h1>Modbus Values (debug)</h1>");
+  page_append("<h1>Modbus Values</h1>");
 
   page_append("<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">\n");
   page_append("<tr><th>Slave idx</th><th>Slave addr</th><th>Reg addr</th><th>Type</th><th>Last value</th><th>Valid</th></tr>\n");
