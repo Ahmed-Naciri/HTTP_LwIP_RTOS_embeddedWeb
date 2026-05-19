@@ -168,6 +168,18 @@ static void http_server_serve(struct netconn *conn)
         {
           network_config_http_send_form(conn);
         }
+        else if (strncmp(g_http_request_buffer, "GET /modbus_config_port.html", 28) == 0)
+        {
+          app_config_http_send_port_form(conn);
+        }
+        else if (strncmp(g_http_request_buffer, "GET /modbus_config_slaves.html", 30) == 0)
+        {
+          app_config_http_send_slaves_form(conn);
+        }
+        else if (strncmp(g_http_request_buffer, "GET /modbus_config_registers.html", 33) == 0)
+        {
+          app_config_http_send_registers_form(conn);
+        }
         else if (strncmp(g_http_request_buffer, "GET /modbus_config.html", 23) == 0)
         {
           app_config_http_send_form(conn);

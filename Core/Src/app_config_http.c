@@ -2,6 +2,7 @@
 
 #include "app_config.h"
 #include "main.h"
+#include "lwip/sys.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -85,13 +86,15 @@
 
 /*
  * VARIABLES GLOBALES:
- *  g_app_config_page_buffer: buffer de 12000 octets pour stocker la page HTML générée
+ *  g_app_config_page_buffer: petit buffer pour petites réponses (statut/messages)
  *  g_page_used: nombre d'octets actuellement utilisés dans le buffer
  * 
  * Ces variables évitent les allocations dynamiques (heap) qui sont risquées en embedded.
  * Sans elles, on devrait allouer/libérer mémoire, ce qui peut causer de la fragmentation.
  */
-static char g_app_config_page_buffer[12000];
+#define APP_HTTP_SMALL_BUFFER_SIZE 1024u
+
+static char g_app_config_page_buffer[APP_HTTP_SMALL_BUFFER_SIZE];
 static size_t g_page_used = 0u;
 
 /*
@@ -800,28 +803,289 @@ static void render_register_section(void)
  *           fournit les formulaires pour les modifier.\n *
  * FLUX:\n *  - app_config_http_send_form() est appelée par le serveur HTTP (httpserver-netconn.c)
  *           quand le client demande /modbus_config.html\n *  - Elle génère une page avec l'état actuel via les render_*_section()\n *  - Les utilisateurs peuvent remplir les formulaires et cliquer \"Submit\"\n *  - Les POSTs sont traités par app_config_http_handle_save()\n * \n * UTILISATION: Appelée directement par le serveur HTTP lwIP (netconn).\n * \n * SANS CETTE FONCTION: Pas de page de configuration web pour Modbus\n *                      => Les utilisateurs ne pourraient pas gérer les esclaves/registres\n *                      => PRODUIT INUTILISABLE.\n */
-void app_config_http_send_form(struct netconn *conn)
+static void http_write(struct netconn *conn, const char *s)
 {
-  page_reset();
-  page_append("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n");
-  page_append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Modbus Config</title></head>");
-  page_append("<body style=\"font-family:Arial,sans-serif;max-width:980px;margin:20px auto;\">"
-              "<h1>Modbus Configuration</h1>");
+  if ((s == NULL) || (conn == NULL)) {
+    return;
+  }
 
-  render_port_section();
-  render_slave_section();
-  render_register_section();
+  {
+    const char *p = s;
+    size_t remaining = strlen(s);
 
-  page_append("<p><a href=\"/modbus_values.html\">display modbus values</a></p>");
-  page_append("<p><a href=\"/config.html\">Network config</a></p>");
-  page_append("<p><a href=\"/\">Back to main page</a></p>");
-  page_append("</body></html>");
+    while (remaining > 0u) {
+      size_t chunk = (remaining > 256u) ? 256u : remaining;
+      err_t err;
+      uint16_t retry = 0u;
 
-  netconn_write(conn, g_app_config_page_buffer, g_page_used, NETCONN_COPY);
+      do {
+        err = netconn_write(conn, p, chunk, NETCONN_COPY);
+        if (err == ERR_MEM) {
+          /* Let TCP task drain queued segments before retrying. */
+          sys_msleep(2u);
+        }
+        retry++;
+      } while ((err == ERR_MEM) && (retry < 200u));
+
+      if (err != ERR_OK) {
+        /* Stop on persistent socket error; caller will close connection. */
+        break;
+      }
+
+      p += chunk;
+      remaining -= chunk;
+    }
+  }
 }
 
-/* Helper: append float value with fixed precision without using printf float support */
-static void page_append_float(float v)
+static void http_write_uint(struct netconn *conn, unsigned long v)
+{
+  char buf[12];
+  int n = snprintf(buf, sizeof(buf), "%lu", v);
+  if (n > 0) {
+    http_write(conn, buf);
+  }
+}
+
+/* PORT CONFIGURATION PAGE - Lightweight, fast */
+void app_config_http_send_port_form(struct netconn *conn)
+{
+  uint8_t i;
+
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<title>Port Config</title>"
+    "<style>body{font-family:Arial,sans-serif;max-width:600px;margin:20px auto}form{background:#f9f9f9;padding:15px;border-radius:4px}input,select{padding:6px;margin:5px}button{padding:8px 15px;background:#0066cc;color:white;border:none;cursor:pointer;border-radius:4px}button:hover{background:#0052a3}</style>"
+    "</head><body>"
+    "<h1>UART Port Configuration</h1>"
+    "<form method='POST' action='/save_modbus_config'>\n"
+    "<input type='hidden' name='action' value='save_port'>\n"
+    "<p><label>Port:<br><select name='port_id'>"
+  );
+
+  for (i = 0; i < MAX_UART_PORTS; i++) {
+    http_write(conn, "<option value='");
+    http_write_uint(conn, (unsigned long)i);
+    http_write(conn, "' ");
+    if (appDb.ports[0].portId == (uartPortId_t)i) {
+      http_write(conn, "selected");
+    }
+    http_write(conn, ">UART");
+    http_write_uint(conn, (unsigned long)(i + 1u));
+    http_write(conn, "</option>");
+  }
+
+  http_write(conn, "</select></label></p>\n");
+
+  http_write(conn, "<p><label>Baud rate:<br><input name='baud' value='");
+  http_write_uint(conn, (unsigned long)appDb.ports[0].baudRate);
+  http_write(conn, "' style='width:200px'></label></p>\n");
+
+  http_write(conn, "<p><label>Stop bits (1 or 2):<br><input name='stop_bits' value='");
+  http_write_uint(conn, (unsigned long)appDb.ports[0].stopBits);
+  http_write(conn, "' style='width:200px'></label></p>\n");
+
+  http_write(conn, "<p><label>Parity (0=None, 1=Even, 2=Odd):<br><input name='parity' value='");
+  http_write_uint(conn, (unsigned long)appDb.ports[0].parity);
+  http_write(conn, "' style='width:200px'></label></p>\n");
+
+  http_write(conn, "<p><button type='submit'>Save Port</button></p></form>\n");
+
+  http_write(conn,
+    "<hr><p><strong>Navigation:</strong></p>"
+    "<p><a href='/modbus_config_slaves.html'>Configure Slaves</a></p>"
+    "<p><a href='/modbus_config_registers.html'>Configure Registers</a></p>"
+    "<p><a href='/modbus_values.html'>View Values</a></p>"
+    "<p><a href='/config.html'>Network Config</a></p>"
+    "<p><a href='/'>Home</a></p>"
+    "</body></html>"
+  );
+}
+
+/* SLAVES CONFIGURATION PAGE */
+void app_config_http_send_slaves_form(struct netconn *conn)
+{
+  uint8_t i;
+
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<title>Slaves Config</title>"
+    "<style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px}form{background:#f9f9f9;padding:15px;margin:15px 0;border-radius:4px}input,select{padding:6px;margin:5px}button{padding:8px 15px;background:#0066cc;color:white;border:none;cursor:pointer;border-radius:4px}button:hover{background:#0052a3}.del-btn{background:#c00}.del-btn:hover{background:#900}</style>"
+    "</head><body>"
+    "<h1>Configure Modbus Slaves</h1>"
+    "<h2>Current Slaves</h2>"
+    "<table><tr><th>Index</th><th>Address</th><th>Port</th><th>Registers</th><th>Action</th></tr>"
+  );
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      http_write(conn, "<tr><td>");
+      http_write_uint(conn, (unsigned long)i);
+      http_write(conn, "</td><td>");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+      http_write(conn, "</td><td>UART");
+      http_write_uint(conn, (unsigned long)(appDb.slaveConfig[i].portId + 1u));
+      http_write(conn, "</td><td>");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerCount);
+      http_write(conn, "</td><td>");
+      http_write(conn,
+        "<form method='POST' action='/save_modbus_config' style='margin:0;display:inline'>"
+        "<input type='hidden' name='action' value='delete_slave'>"
+        "<input type='hidden' name='slave_index' value='");
+      http_write_uint(conn, (unsigned long)i);
+      http_write(conn, "'><button class='del-btn' type='submit'>Delete</button></form></td></tr>");
+    }
+  }
+
+  http_write(conn, "</table>\n");
+
+  http_write(conn,
+    "<h2>Add New Slave</h2>"
+    "<form method='POST' action='/save_modbus_config'>"
+    "<input type='hidden' name='action' value='add_slave'>"
+    "<p><label>Slave Address (1..247):<br><input name='slave_address' style='width:200px' required></label></p>"
+    "<p><label>UART Port:<br><select name='slave_port'>"
+  );
+
+  for (i = 0; i < MAX_UART_PORTS; i++) {
+    http_write(conn, "<option value='");
+    http_write_uint(conn, (unsigned long)i);
+    http_write(conn, "'>UART");
+    http_write_uint(conn, (unsigned long)(i + 1u));
+    http_write(conn, "</option>");
+  }
+
+  http_write(conn,
+    "</select></label></p>"
+    "<p><button type='submit'>Add Slave</button></p>"
+    "</form>"
+    "<hr><p><strong>Navigation:</strong></p>"
+    "<p><a href='/modbus_config_port.html'>Configure Port</a></p>"
+    "<p><a href='/modbus_config_registers.html'>Configure Registers</a></p>"
+    "<p><a href='/modbus_values.html'>View Values</a></p>"
+    "<p><a href='/config.html'>Network Config</a></p>"
+    "<p><a href='/'>Home</a></p>"
+    "</body></html>"
+  );
+}
+
+/* REGISTERS CONFIGURATION PAGE */
+void app_config_http_send_registers_form(struct netconn *conn)
+{
+  uint8_t i, j;
+  int has_slave = 0;
+
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<title>Registers Config</title>"
+    "<style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px}form{background:#f9f9f9;padding:15px;margin:15px 0;border-radius:4px}input,select{padding:6px;margin:5px}button{padding:8px 15px;background:#0066cc;color:white;border:none;cursor:pointer;border-radius:4px}button:hover{background:#0052a3}.del-btn{background:#c00}.del-btn:hover{background:#900}</style>"
+    "</head><body>"
+    "<h1>Configure Modbus Registers</h1>"
+    "<h2>Current Registers</h2>"
+    "<table><tr><th>Slave Idx</th><th>Slave Addr</th><th>Reg Address</th><th>Type</th><th>Action</th></tr>"
+  );
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
+          http_write(conn, "<tr><td>");
+          http_write_uint(conn, (unsigned long)i);
+          http_write(conn, "</td><td>");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+          http_write(conn, "</td><td>");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+          http_write(conn, "</td><td>");
+          http_write(conn, register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
+          http_write(conn, "</td><td>");
+          http_write(conn,
+            "<form method='POST' action='/save_modbus_config' style='margin:0;display:inline'>"
+            "<input type='hidden' name='action' value='delete_register'>"
+            "<input type='hidden' name='reg_slave_index' value='");
+          http_write_uint(conn, (unsigned long)i);
+          http_write(conn, "'><input type='hidden' name='reg_address' value='");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+          http_write(conn, "'><button class='del-btn' type='submit'>Delete</button></form></td></tr>");
+        }
+      }
+    }
+  }
+
+  http_write(conn, "</table>\n");
+
+  http_write(conn,
+    "<h2>Add New Register</h2>"
+    "<form method='POST' action='/save_modbus_config'>"
+    "<input type='hidden' name='action' value='add_register'>"
+    "<p><label>Slave:<br><select name='reg_slave_index'>"
+  );
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      has_slave = 1;
+      http_write(conn, "<option value='");
+      http_write_uint(conn, (unsigned long)i);
+      http_write(conn, "'>idx ");
+      http_write_uint(conn, (unsigned long)i);
+      http_write(conn, " - addr ");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+      http_write(conn, "</option>");
+    }
+  }
+
+  http_write(conn,
+    "</select></label></p>"
+    "<p><label>Register Address (0-65535):<br><input name='reg_address' type='number' min='0' max='65535' style='width:200px' required></label></p>"
+    "<p><label>Register Type:<br><select name='reg_type'>"
+    "<option value='0'>U16 (Unsigned 16-bit)</option>"
+    "<option value='1'>I16 (Signed 16-bit)</option>"
+    "<option value='2'>FLOAT (32-bit float)</option>"
+    "</select></label></p>"
+    "<p><button type='submit'>Add Register</button></p>"
+    "</form>"
+  );
+
+  if (has_slave == 0) {
+    http_write(conn, "<p style='color:#900;font-weight:bold'>No slaves configured. Add a slave first!</p>");
+  }
+
+  http_write(conn,
+    "<hr><p><strong>Navigation:</strong></p>"
+    "<p><a href='/modbus_config_port.html'>Configure Port</a></p>"
+    "<p><a href='/modbus_config_slaves.html'>Configure Slaves</a></p>"
+    "<p><a href='/modbus_values.html'>View Values</a></p>"
+    "<p><a href='/config.html'>Network Config</a></p>"
+    "<p><a href='/'>Home</a></p>"
+    "</body></html>"
+  );
+}
+
+/* LEGACY: Combined page for backward compatibility */
+void app_config_http_send_form(struct netconn *conn)
+{
+  /* Redirect to port config page */
+  http_write(conn,
+    "HTTP/1.1 302 Found\r\n"
+    "Location: /modbus_config_port.html\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+  );
+}
+
+/* Helper: stream float value with fixed precision without using printf float support */
+static void http_write_float(struct netconn *conn, float v)
 {
   int neg = 0;
   if (v < 0.0f) {
@@ -838,18 +1102,18 @@ static void page_append_float(float v)
   }
 
   if (neg) {
-    page_append("-");
+    http_write(conn, "-");
   }
 
-  page_append_uint(ip);
-  page_append(".");
+  http_write_uint(conn, ip);
+  http_write(conn, ".");
 
   char fbuf[4];
   fbuf[0] = '0' + (char)((frac / 100u) % 10u);
   fbuf[1] = '0' + (char)((frac / 10u) % 10u);
   fbuf[2] = '0' + (char)(frac % 10u);
   fbuf[3] = '\0';
-  page_append(fbuf);
+  http_write(conn, fbuf);
 }
 
 /* Debug page: show lastValue and valid flags for all configured registers */
@@ -857,42 +1121,227 @@ void app_config_http_send_values(struct netconn *conn)
 {
   uint8_t i, j;
 
-  page_reset();
-  page_append("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n");
-  page_append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Modbus Values</title></head>");
-  page_append("<body style=\"font-family:Arial,sans-serif;max-width:980px;margin:20px auto;\">\n");
-  page_append("<h1>Modbus Values</h1>");
-
-  page_append("<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">\n");
-  page_append("<tr><th>Slave idx</th><th>Slave addr</th><th>Reg addr</th><th>Type</th><th>Last value</th><th>Valid</th></tr>\n");
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "<!doctype html><html><head><meta charset=\"utf-8\"><title>Modbus Values</title></head>"
+    "<body style=\"font-family:Arial,sans-serif;max-width:980px;margin:20px auto;\">"
+    "<h1>Modbus Values</h1>"
+    "<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">"
+    "<tr><th>Slave idx</th><th>Slave addr</th><th>Reg addr</th><th>Type</th><th>Last value</th><th>Valid</th></tr>"
+  );
 
   for (i = 0; i < MAX_SLAVES; i++) {
     if (appDb.slaveConfig[i].used == 1u) {
       for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
         if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
-          page_append("<tr><td>");
-          page_append_uint((unsigned long)i);
-          page_append("</td><td>");
-          page_append_uint((unsigned long)appDb.slaveConfig[i].slaveAddress);
-          page_append("</td><td>");
-          page_append_uint((unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
-          page_append("</td><td>");
-          page_append(register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
-          page_append("</td><td>");
-          page_append_float(appDb.slaveConfig[i].registerConfig[j].lastValue);
-          page_append("</td><td>");
-          page_append(appDb.slaveConfig[i].registerConfig[j].valid ? "yes" : "no");
-          page_append("</td></tr>\n");
+          http_write(conn, "<tr><td>");
+          http_write_uint(conn, (unsigned long)i);
+          http_write(conn, "</td><td>");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+          http_write(conn, "</td><td>");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+          http_write(conn, "</td><td>");
+          http_write(conn, register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
+          http_write(conn, "</td><td>");
+          http_write_float(conn, appDb.slaveConfig[i].registerConfig[j].lastValue);
+          http_write(conn, "</td><td>");
+          http_write(conn, appDb.slaveConfig[i].registerConfig[j].valid ? "yes" : "no");
+          http_write(conn, "</td></tr>");
         }
       }
     }
   }
 
-  page_append("</table>\n");
-  page_append("<p><a href=\"/modbus_config.html\">Back to Modbus configuration</a></p>");
-  page_append("</body></html>\n");
+  http_write(conn, "</table>");
+  http_write(conn, "<p><a href=\"/modbus_config.html\">Back to Modbus configuration</a></p>");
+  http_write(conn, "</body></html>");
+}
 
-  netconn_write(conn, g_app_config_page_buffer, g_page_used, NETCONN_COPY);
+/*
+ * app_config_http_send_api_slaves(conn)
+ * 
+ * OBJECTIF: Envoyer la liste des esclaves configurés en JSON
+ * PARAMÈTRES:
+ *  - conn: connexion netconn (socket TCP) vers le client
+ * 
+ * FORMAT JSON: [{"index":0,"address":10,"port":0,"registers":5}, ...]
+ */
+void app_config_http_send_api_slaves(struct netconn *conn)
+{
+  uint8_t i;
+  int first = 1;
+
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: application/json\r\n"
+    "Cache-Control: no-cache\r\n"
+    "Connection: close\r\n\r\n"
+    "["
+  );
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      if (!first) {
+        http_write(conn, ",");
+      }
+      first = 0;
+
+      http_write(conn, "{\"index\":");
+      http_write_uint(conn, (unsigned long)i);
+
+      http_write(conn, ",\"address\":");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+
+      http_write(conn, ",\"port\":");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].portId);
+
+      http_write(conn, ",\"registers\":");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerCount);
+
+      http_write(conn, "}");
+    }
+  }
+
+  http_write(conn, "]");
+}
+
+/*
+ * app_config_http_send_api_registers(conn)
+ * 
+ * OBJECTIF: Envoyer la liste des registres configurés en JSON
+ * PARAMÈTRES:
+ *  - conn: connexion netconn (socket TCP) vers le client
+ * 
+ * FORMAT JSON: [{"slave_index":0,"slave_address":10,"reg_address":100,"type":"U16"}, ...]
+ */
+void app_config_http_send_api_registers(struct netconn *conn)
+{
+  uint8_t i, j;
+  int first = 1;
+
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: application/json\r\n"
+    "Cache-Control: no-cache\r\n"
+    "Connection: close\r\n\r\n"
+    "["
+  );
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
+          if (!first) {
+            http_write(conn, ",");
+          }
+          first = 0;
+
+          http_write(conn, "{\"slave_index\":");
+          http_write_uint(conn, (unsigned long)i);
+
+          http_write(conn, ",\"slave_address\":");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+
+          http_write(conn, ",\"reg_address\":");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+
+          http_write(conn, ",\"type\":\"");
+          http_write(conn, register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
+          http_write(conn, "\"}");
+        }
+      }
+    }
+  }
+
+  http_write(conn, "]");
+}
+
+/*
+ * app_config_http_send_api_modbus_config(conn)
+ * 
+ * OBJECTIF: Envoyer slaves ET registers en UNE SEULE réponse JSON
+ * 
+ * AVANTAGE CRUCIAL: 
+ *  - Une seule requête HTTP au lieu de 3
+ *  - Une seule connexion TCP au lieu de 3
+ *  - Pas de blocage parallèle sur serveur single-threaded LwIP
+ *  - Sur STM32 embedded, cela fait une énorme différence de latence
+ * 
+ * FORMAT JSON:
+ *  {
+ *    "slaves": [{"index":0,"address":10,"port":0,"registers":5}, ...],
+ *    "registers": [{"slave_index":0,"slave_address":10,"reg_address":100,"type":"U16"}, ...]
+ *  }
+ */
+void app_config_http_send_api_modbus_config(struct netconn *conn)
+{
+  uint8_t i, j;
+  int first_slave = 1;
+  int first_reg = 1;
+
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: application/json\r\n"
+    "Cache-Control: no-cache\r\n"
+    "Connection: close\r\n\r\n"
+    "{\"slaves\":["
+  );
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      if (!first_slave) {
+        http_write(conn, ",");
+      }
+      first_slave = 0;
+
+      http_write(conn, "{\"index\":");
+      http_write_uint(conn, (unsigned long)i);
+
+      http_write(conn, ",\"address\":");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+
+      http_write(conn, ",\"port\":");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].portId);
+
+      http_write(conn, ",\"registers\":");
+      http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerCount);
+
+      http_write(conn, "}");
+    }
+  }
+
+  http_write(conn, "],\"registers\":[");
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
+          if (!first_reg) {
+            http_write(conn, ",");
+          }
+          first_reg = 0;
+
+          http_write(conn, "{\"slave_index\":");
+          http_write_uint(conn, (unsigned long)i);
+
+          http_write(conn, ",\"slave_address\":");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+
+          http_write(conn, ",\"reg_address\":");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+
+          http_write(conn, ",\"type\":\"");
+          http_write(conn, register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
+          http_write(conn, "\"}");
+        }
+      }
+    }
+  }
+
+  http_write(conn, "]}");
 }
 
 /*

@@ -1,6 +1,10 @@
-../Core/Src/network_config_http.c:60:12:parse_ipv4	6
-../Core/Src/network_config_http.c:83:12:hex_to_nibble	7
-../Core/Src/network_config_http.c:97:13:url_decode_inplace	8
-../Core/Src/network_config_http.c:127:12:get_param	15
-../Core/Src/network_config_http.c:167:6:network_config_http_send_form	3
-../Core/Src/network_config_http.c:219:6:network_config_http_handle_save	10
+../Core/Src/network_config_http.c:15:13:http_write	3
+../Core/Src/network_config_http.c:22:13:http_write_uint	2
+../Core/Src/network_config_http.c:31:13:http_write_ipv4	1
+../Core/Src/network_config_http.c:58:13:send_http_response_with_status	2
+../Core/Src/network_config_http.c:82:12:parse_ipv4	6
+../Core/Src/network_config_http.c:105:12:hex_to_nibble	7
+../Core/Src/network_config_http.c:119:13:url_decode_inplace	8
+../Core/Src/network_config_http.c:149:12:get_param	15
+../Core/Src/network_config_http.c:189:6:network_config_http_send_form	3
+../Core/Src/network_config_http.c:265:6:network_config_http_handle_save	10

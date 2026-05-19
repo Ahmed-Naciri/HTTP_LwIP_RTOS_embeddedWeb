@@ -12,32 +12,34 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Keep large HTTP page buffer out of thread stack to avoid hard faults. */
-static char g_config_page_buffer[1400];
+static void http_write(struct netconn *conn, const char *s)
+{
+  if ((s != NULL) && (conn != NULL)) {
+    netconn_write(conn, s, strlen(s), NETCONN_COPY);
+  }
+}
 
-static const char CONFIG_PAGE_TEMPLATE[] =
-"HTTP/1.1 200 OK\r\n"
-"Content-Type: text/html\r\n"
-"Connection: close\r\n"
-"\r\n"
-"<!doctype html>"
-"<html><head><meta charset=\"utf-8\"><title>Network Config</title></head>"
-"<body style=\"font-family:Arial,sans-serif;max-width:640px;margin:20px auto;\">"
-"<h1>Network Configuration</h1>"
-"<form method=\"POST\" action=\"/save_config\">"
-"<p><label>IP Address<br><input name=\"ip\" value=\"%u.%u.%u.%u\" style=\"width:260px\"></label></p>"
-"<p><label>Netmask<br><input name=\"netmask\" value=\"%u.%u.%u.%u\" style=\"width:260px\"></label></p>"
-"<p><label>Gateway<br><input name=\"gateway\" value=\"%u.%u.%u.%u\" style=\"width:260px\"></label></p>"
-"<p><button type=\"submit\">Save</button></p>"
-"</form>"
-"<p><a href=\"/\">Back to main page</a></p>"
-"</body></html>";
+static void http_write_uint(struct netconn *conn, unsigned long v)
+{
+  char buf[12];
+  int n = snprintf(buf, sizeof(buf), "%lu", v);
+  if (n > 0) {
+    http_write(conn, buf);
+  }
+}
+
+static void http_write_ipv4(struct netconn *conn, const uint8_t ip[4])
+{
+  http_write_uint(conn, (unsigned long)ip[0]);
+  http_write(conn, ".");
+  http_write_uint(conn, (unsigned long)ip[1]);
+  http_write(conn, ".");
+  http_write_uint(conn, (unsigned long)ip[2]);
+  http_write(conn, ".");
+  http_write_uint(conn, (unsigned long)ip[3]);
+}
 
 static const char SAVE_OK_PAGE[] =
-"HTTP/1.1 200 OK\r\n"
-"Content-Type: text/html\r\n"
-"Connection: close\r\n"
-"\r\n"
 "<!doctype html><html><head><meta charset=\"utf-8\"><title>Saved</title></head>"
 "<body style=\"font-family:Arial,sans-serif;max-width:640px;margin:20px auto;\">"
 "<h1>Configuration Saved</h1>"
@@ -46,16 +48,36 @@ static const char SAVE_OK_PAGE[] =
 "</body></html>";
 
 static const char SAVE_BAD_REQUEST[] =
-"HTTP/1.1 400 Bad Request\r\n"
-"Content-Type: text/html\r\n"
-"Connection: close\r\n"
-"\r\n"
 "<!doctype html><html><head><meta charset=\"utf-8\"><title>Invalid</title></head>"
 "<body style=\"font-family:Arial,sans-serif;max-width:640px;margin:20px auto;\">"
 "<h1>Invalid Configuration</h1>"
 "<p>One or more fields are invalid. Please check IP, netmask, and gateway.</p>"
 "<p><a href=\"/config.html\">Back to configuration page</a></p>"
 "</body></html>";
+
+static void send_http_response_with_status(struct netconn *conn,
+                                           const char *status,
+                                           const char *body)
+{
+  char header[160];
+  int n;
+  size_t body_len = strlen(body);
+
+  n = snprintf(header, sizeof(header),
+               "HTTP/1.1 %s\r\n"
+               "Content-Type: text/html\r\n"
+               "Content-Length: %lu\r\n"
+               "Cache-Control: no-cache\r\n"
+               "Connection: close\r\n"
+               "\r\n",
+               status,
+               (unsigned long)body_len);
+
+  if (n > 0) {
+    netconn_write(conn, header, (size_t)n, NETCONN_COPY);
+  }
+  netconn_write(conn, body, body_len, NETCONN_COPY);
+}
 
 static int parse_ipv4(const char *text, uint8_t out[4])
 {
@@ -208,12 +230,36 @@ void network_config_http_send_form(struct netconn *conn)
     disp_gw[3] = (uint8_t)ip4_addr4_16(netif_ip4_gw(&gnetif));
   }
 
-  (void)snprintf(g_config_page_buffer, sizeof(g_config_page_buffer), CONFIG_PAGE_TEMPLATE,
-                 disp_ip[0], disp_ip[1], disp_ip[2], disp_ip[3],
-                 disp_mask[0], disp_mask[1], disp_mask[2], disp_mask[3],
-                 disp_gw[0], disp_gw[1], disp_gw[2], disp_gw[3]);
+  /* Stream the page directly to avoid building a large dynamic buffer. */
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Cache-Control: no-cache\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "<!doctype html>"
+    "<html><head><meta charset=\"utf-8\"><title>Network Config</title></head>"
+    "<body style=\"font-family:Arial,sans-serif;max-width:640px;margin:20px auto;\">"
+    "<h1>Network Configuration</h1>"
+    "<form method=\"POST\" action=\"/save_config\">"
+    "<p><label>IP Address<br><input name=\"ip\" value=\""
+  );
+  http_write_ipv4(conn, disp_ip);
+  http_write(conn, "\" style=\"width:260px\"></label></p>");
 
-  netconn_write(conn, g_config_page_buffer, strlen(g_config_page_buffer), NETCONN_COPY);
+  http_write(conn, "<p><label>Netmask<br><input name=\"netmask\" value=\"");
+  http_write_ipv4(conn, disp_mask);
+  http_write(conn, "\" style=\"width:260px\"></label></p>");
+
+  http_write(conn, "<p><label>Gateway<br><input name=\"gateway\" value=\"");
+  http_write_ipv4(conn, disp_gw);
+  http_write(conn,
+    "\" style=\"width:260px\"></label></p>"
+    "<p><button type=\"submit\">Save</button></p>"
+    "</form>"
+    "<p><a href=\"/\">Back to main page</a></p>"
+    "</body></html>"
+  );
 }
 
 void network_config_http_handle_save(struct netconn *conn, const char *request, unsigned short request_len)
@@ -227,14 +273,14 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
   (void)request_len;
 
   if (request == NULL) {
-    netconn_write(conn, SAVE_BAD_REQUEST, strlen(SAVE_BAD_REQUEST), NETCONN_COPY);
+    send_http_response_with_status(conn, "400 Bad Request", SAVE_BAD_REQUEST);
     return;
   }
 
   /* Body starts after the blank line that terminates HTTP headers.because when the user save the form , the browser sent a request that contain both Header and Body separated by this : \r\n\r\n */
   body = strstr(request, "\r\n\r\n");
   if (body == NULL) {
-    netconn_write(conn, SAVE_BAD_REQUEST, strlen(SAVE_BAD_REQUEST), NETCONN_COPY);
+    send_http_response_with_status(conn, "400 Bad Request", SAVE_BAD_REQUEST);
     return;
   }
   body += 4;
@@ -243,7 +289,7 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
   if ((!get_param(body, "ip", ip_str, sizeof(ip_str))) ||
       (!get_param(body, "netmask", mask_str, sizeof(mask_str))) ||
       (!get_param(body, "gateway", gw_str, sizeof(gw_str)))) {
-    netconn_write(conn, SAVE_BAD_REQUEST, strlen(SAVE_BAD_REQUEST), NETCONN_COPY);
+    send_http_response_with_status(conn, "400 Bad Request", SAVE_BAD_REQUEST);
     return;
   }
 
@@ -252,15 +298,15 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
   if ((!parse_ipv4(ip_str, new_cfg.ip)) ||
       (!parse_ipv4(mask_str, new_cfg.netmask)) ||
       (!parse_ipv4(gw_str, new_cfg.gateway))) {
-    netconn_write(conn, SAVE_BAD_REQUEST, strlen(SAVE_BAD_REQUEST), NETCONN_COPY);
+    send_http_response_with_status(conn, "400 Bad Request", SAVE_BAD_REQUEST);
     return;
   }
 
   /* Persist to flash-backed EEPROM emulation. */
   if (!network_config_save(&new_cfg)) {
-    netconn_write(conn, SAVE_BAD_REQUEST, strlen(SAVE_BAD_REQUEST), NETCONN_COPY);
+    send_http_response_with_status(conn, "400 Bad Request", SAVE_BAD_REQUEST);
     return;
   }
 
-  netconn_write(conn, SAVE_OK_PAGE, strlen(SAVE_OK_PAGE), NETCONN_COPY);
+  send_http_response_with_status(conn, "200 OK", SAVE_OK_PAGE);
 }

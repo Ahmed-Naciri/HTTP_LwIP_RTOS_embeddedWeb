@@ -1,0 +1,2 @@
+../Core/Src/app_config_http_test.c:15:6:app_config_http_send_test_json	136	static
+../Core/Src/app_config_http_test.c:29:6:app_config_http_send_test_slaves	160	static
