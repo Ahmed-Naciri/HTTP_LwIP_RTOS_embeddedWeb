@@ -822,10 +822,10 @@ static void http_write(struct netconn *conn, const char *s)
         err = netconn_write(conn, p, chunk, NETCONN_COPY);
         if (err == ERR_MEM) {
           /* Let TCP task drain queued segments before retrying. */
-          sys_msleep(2u);
+          sys_msleep(1u);
         }
         retry++;
-      } while ((err == ERR_MEM) && (retry < 200u));
+      } while ((err == ERR_MEM) && (retry < 50u));
 
       if (err != ERR_OK) {
         /* Stop on persistent socket error; caller will close connection. */

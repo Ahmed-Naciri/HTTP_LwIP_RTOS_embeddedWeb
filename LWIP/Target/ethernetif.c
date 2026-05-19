@@ -40,7 +40,8 @@
 /* The time to block waiting for input. */
 #define TIME_WAITING_FOR_INPUT ( portMAX_DELAY )
 /* Time to block waiting for transmissions to finish */
-#define ETHIF_TX_TIMEOUT (2000U)
+#define ETHIF_TX_TIMEOUT (100U)
+#define ETHIF_TX_MAX_RETRIES (12U)
 /* USER CODE BEGIN OS_THREAD_STACK_SIZE_WITH_RTOS */
 /* Stack size of the interface thread */
 #define INTERFACE_THREAD_STACK_SIZE ( 1024 )
@@ -250,7 +251,7 @@ static void low_level_init(struct netif *netif)
   memset(&attributes, 0x0, sizeof(osThreadAttr_t));
   attributes.name = "EthIf";
   attributes.stack_size = INTERFACE_THREAD_STACK_SIZE;
-  attributes.priority = osPriorityRealtime;
+  attributes.priority = osPriorityAboveNormal;
   osThreadNew(ethernetif_input, netif, &attributes);
 /* USER CODE END OS_THREAD_NEW_CMSIS_RTOS_V2 */
 
@@ -350,6 +351,8 @@ static void low_level_init(struct netif *netif)
 static err_t low_level_output(struct netif *netif, struct pbuf *p)
 {
   uint32_t i = 0U;
+  uint32_t tx_retry = 0U;
+  osStatus_t tx_wait_status;
   struct pbuf *q = NULL;
   err_t errval = ERR_OK;
   ETH_BufferTypeDef Txbuffer[ETH_TX_DESC_CNT] = {0};
@@ -385,6 +388,9 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 
   do
   {
+    /* Reclaim descriptors from completed frames before each TX attempt. */
+    HAL_ETH_ReleaseTxPacket(&heth);
+
     if(HAL_ETH_Transmit_IT(&heth, &TxConfig) == HAL_OK)
     {
       errval = ERR_OK;
@@ -394,10 +400,14 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 
       if(HAL_ETH_GetError(&heth) & HAL_ETH_ERROR_BUSY)
       {
-        /* Wait for descriptors to become available */
-        osSemaphoreAcquire(TxPktSemaphore, ETHIF_TX_TIMEOUT);
-        HAL_ETH_ReleaseTxPacket(&heth);
-        errval = ERR_BUF;
+        /* Wait a short bounded time for descriptors to become available. */
+        tx_wait_status = osSemaphoreAcquire(TxPktSemaphore, ETHIF_TX_TIMEOUT);
+        if (tx_wait_status == osOK)
+        {
+          HAL_ETH_ReleaseTxPacket(&heth);
+        }
+        tx_retry++;
+        errval = (tx_retry < ETHIF_TX_MAX_RETRIES) ? ERR_BUF : ERR_TIMEOUT;
       }
       else
       {
@@ -407,6 +417,12 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
       }
     }
   }while(errval == ERR_BUF);
+
+  if (errval == ERR_TIMEOUT)
+  {
+    /* TX could not progress in bounded retries; release retained pbuf ref. */
+    pbuf_free(p);
+  }
 
   return errval;
 }
