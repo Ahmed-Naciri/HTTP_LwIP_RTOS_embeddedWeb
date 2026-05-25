@@ -6,6 +6,7 @@
 #include "network_config_http.h"
 
 #include "network_config.h"
+#include "main.h"
 #include "lwip.h"
 #include "lwip/ip4_addr.h"
 
@@ -45,6 +46,14 @@ static const char SAVE_OK_PAGE[] =
 "<h1>Configuration Saved</h1>"
 "<p>Reboot required: new network settings will apply after reset.</p>"
 "<p><a href=\"/config.html\">Back to configuration page</a></p>"
+"</body></html>";
+
+static const char SAVE_REBOOT_PAGE[] =
+"<!doctype html><html><head><meta charset=\"utf-8\"><title>Rebooting</title></head>"
+"<body style=\"font-family:Arial,sans-serif;max-width:640px;margin:20px auto;\">"
+"<h1>Configuration Saved</h1>"
+"<p>The device will reboot software now and come back on the new IP address.</p>"
+"<p>If the page stops responding, reconnect to the new IP after a few seconds.</p>"
 "</body></html>";
 
 static const char SAVE_BAD_REQUEST[] =
@@ -255,7 +264,10 @@ void network_config_http_send_form(struct netconn *conn)
   http_write_ipv4(conn, disp_gw);
   http_write(conn,
     "\" style=\"width:260px\"></label></p>"
-    "<p><button type=\"submit\">Save</button></p>"
+    "<p style=\"display:flex;gap:12px;flex-wrap:wrap;\">"
+    "<button type=\"submit\">Save</button>"
+    "<button type=\"submit\" name=\"reboot\" value=\"1\" style=\"background:#b00020;color:#fff;border:none;padding:8px 14px;border-radius:4px;cursor:pointer;\">Apply &amp; Reboot</button>"
+    "</p>"
     "</form>"
     "<p><a href=\"/\">Back to main page</a></p>"
     "</body></html>"
@@ -269,6 +281,8 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
   char ip_str[20];
   char mask_str[20];
   char gw_str[20];
+  char reboot_str[8];
+  int reboot_requested;
 
   (void)request_len;
 
@@ -293,6 +307,8 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
     return;
   }
 
+  reboot_requested = get_param(body, "reboot", reboot_str, sizeof(reboot_str));
+
   /* Parse into numeric octets and reject invalid values early. */
   new_cfg = g_network_config;
   if ((!parse_ipv4(ip_str, new_cfg.ip)) ||
@@ -308,5 +324,11 @@ void network_config_http_handle_save(struct netconn *conn, const char *request, 
     return;
   }
 
-  send_http_response_with_status(conn, "200 OK", SAVE_OK_PAGE);
+  if (reboot_requested) {
+    send_http_response_with_status(conn, "200 OK", SAVE_REBOOT_PAGE);
+    HAL_Delay(200u);
+    NVIC_SystemReset();
+  } else {
+    send_http_response_with_status(conn, "200 OK", SAVE_OK_PAGE);
+  }
 }

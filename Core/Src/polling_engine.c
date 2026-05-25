@@ -30,6 +30,29 @@ static void pollingEngine_moveToNextRegister(void)
 
 }
 
+static void pollingEngine_updateAlarmState(registerConfig_t *registerConfig)
+{
+	if (registerConfig == 0)
+	{
+		return;
+	}
+
+	if ((registerConfig->valid == 0u) || (registerConfig->alarmEnabled == 0u))
+	{
+		registerConfig->alarmActive = 0u;
+		return;
+	}
+
+	if (registerConfig->lastValue > registerConfig->alarmThreshold)
+	{
+		registerConfig->alarmActive = 1u;
+	}
+	else
+	{
+		registerConfig->alarmActive = 0u;
+	}
+}
+
 void pollingEngine_init(void)
 {
 	 currentSlaveIndex = 0;
@@ -72,10 +95,12 @@ void pollingEngine_task(void)
 	 {
 		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].lastValue = (float)registerValue;
 		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].valid = 1;
+		 pollingEngine_updateAlarmState(&appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex]);
 	 }
 	 else
 	 {
 		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].valid = 0;
+		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].alarmActive = 0u;
 	 }
 	 pollingEngine_moveToNextRegister();
 	 return;

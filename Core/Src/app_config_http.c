@@ -233,6 +233,20 @@ static int get_param(const char *body, const char *key, char *out, unsigned out_
   return 1;
 }
 
+/* Build a POST field name with indices, then read it. */
+static int get_indexed_param(const char *body, const char *base, unsigned long a, unsigned long b,
+                             char *out, unsigned out_size)
+{
+  char key[48];
+
+  if ((body == NULL) || (base == NULL) || (out == NULL) || (out_size == 0u)) {
+    return 0;
+  }
+
+  (void)snprintf(key, sizeof(key), "%s_%lu_%lu", base, a, b);
+  return get_param(body, key, out, out_size);
+}
+
 /*
  * trim_left(text)
  * 
@@ -295,6 +309,46 @@ static int parse_ulong(const char *text, unsigned long *value)
   }
 
   return 1;
+}
+
+/* Read one POST field and parse it as a float with strict validation. */
+static int parse_float_value(const char *text, float *value)
+{
+  char *endptr;
+
+  if ((text == NULL) || (value == NULL)) {
+    return 0;
+  }
+
+  *value = strtof(text, &endptr);
+  if ((endptr == text) || (*trim_left(endptr) != '\0')) {
+    return 0;
+  }
+
+  return 1;
+}
+
+/* Return the register matching a slave index and register address. */
+static registerConfig_t *find_register_config(uint8_t slaveIndex, uint16_t regAddress)
+{
+  uint8_t i;
+
+  if (slaveIndex >= MAX_SLAVES) {
+    return 0;
+  }
+
+  if (appDb.slaveConfig[slaveIndex].used != 1u) {
+    return 0;
+  }
+
+  for (i = 0; i < MAX_REGISTERS_PER_SLAVE; i++) {
+    if ((appDb.slaveConfig[slaveIndex].registerConfig[i].used == 1u) &&
+        (appDb.slaveConfig[slaveIndex].registerConfig[i].regAddress == regAddress)) {
+      return &appDb.slaveConfig[slaveIndex].registerConfig[i];
+    }
+  }
+
+  return 0;
 }
 
 /* Read one POST field and parse it as an unsigned number. */
@@ -423,6 +477,58 @@ static void page_append_uint(unsigned long value)
   }
 }
 
+static const char *slave_display_name(uint8_t slaveIndex)
+{
+  static char fallback[MAX_SLAVE_NAME_LEN];
+
+  if ((slaveIndex >= MAX_SLAVES) || (appDb.slaveConfig[slaveIndex].used != 1u)) {
+    return "";
+  }
+
+  if ((memchr(appDb.slaveConfig[slaveIndex].slaveName, '\0', MAX_SLAVE_NAME_LEN) != 0) &&
+      (appDb.slaveConfig[slaveIndex].slaveName[0] != '\0')) {
+    return appDb.slaveConfig[slaveIndex].slaveName;
+  }
+
+  (void)snprintf(fallback, sizeof(fallback), "Slave %u", (unsigned int)(slaveIndex + 1u));
+  return fallback;
+}
+
+static void page_append_html_escaped(const char *text)
+{
+  if (text == NULL) {
+    return;
+  }
+
+  while (*text != '\0') {
+    switch (*text) {
+      case '&':
+        page_append("&amp;");
+        break;
+      case '<':
+        page_append("&lt;");
+        break;
+      case '>':
+        page_append("&gt;");
+        break;
+      case '"':
+        page_append("&quot;");
+        break;
+      case '\'':
+        page_append("&#39;");
+        break;
+      default: {
+        char c[2];
+        c[0] = *text;
+        c[1] = '\0';
+        page_append(c);
+        break;
+      }
+    }
+    text++;
+  }
+}
+
 /*
  * register_type_to_text(t)
  * 
@@ -485,7 +591,8 @@ static void send_status_page(struct netconn *conn, int ok, const char *message)
   page_append(ok ? "200 OK\r\n" : "400 Bad Request\r\n");
   page_append("Content-Type: text/html\r\nConnection: close\r\n\r\n");
   page_append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Modbus</title></head>");
-  page_append("<body style=\"font-family:Arial,sans-serif;max-width:900px;margin:20px auto;\">");
+    page_append("<body style=\"font-family:Arial,sans-serif;max-width:900px;margin:20px auto;\">");
+    page_append("<body style=\"font-family:Arial,sans-serif;max-width:900px;margin:20px auto;\">");
   page_append(ok ? "<h1>Operation completed</h1>" : "<h1>Operation failed</h1>");
   page_append("<p>");
   page_append((message != NULL) ? message : "No details");
@@ -636,12 +743,12 @@ static void render_slave_section(void)
 
   page_append("<h2>Slaves</h2>");
   page_append("<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">"
-              "<tr><th>Index</th><th>Address</th><th>Port</th><th>Registers</th><th>Action</th></tr>");
+              "<tr><th>Name</th><th>Address</th><th>Port</th><th>Registers</th><th>Action</th></tr>");
   for (i = 0; i < MAX_SLAVES; i++) {
     if (appDb.slaveConfig[i].used == 1u) {
       page_append("<tr>");
       page_append("<td>");
-      page_append_uint((unsigned long)i);
+      page_append_html_escaped(slave_display_name(i));
       page_append("</td>");
       page_append("<td>");
       page_append_uint((unsigned long)appDb.slaveConfig[i].slaveAddress);
@@ -666,6 +773,7 @@ static void render_slave_section(void)
   page_append("<h3>Add slave</h3>");
   page_append("<form method=\"POST\" action=\"/save_modbus_config\">"
               "<input type=\"hidden\" name=\"action\" value=\"add_slave\">"
+              "<p><label>Slave name<br><input name=\"slave_name\" maxlength=\"23\" style=\"width:220px\" required></label></p>"
               "<p><label>Slave address (1..247)<br><input name=\"slave_address\" style=\"width:220px\"></label></p>"
               "<p><label>Port<br><select name=\"slave_port\">");
   for (i = 0; i < MAX_UART_PORTS; i++) {
@@ -711,7 +819,7 @@ static void render_register_section(void)
 
   page_append("<h2>Registers</h2>");
   page_append("<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">"
-              "<tr><th>Slave index</th><th>Slave address</th><th>Register address</th><th>Type</th><th>Action</th></tr>");
+              "<tr><th>Slave name</th><th>Slave address</th><th>Register address</th><th>Type</th><th>Action</th></tr>");
 
   for (i = 0; i < MAX_SLAVES; i++) {
     if (appDb.slaveConfig[i].used == 1u) {
@@ -719,7 +827,7 @@ static void render_register_section(void)
         if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
           page_append("<tr>");
           page_append("<td>");
-          page_append_uint((unsigned long)i);
+          page_append_html_escaped(slave_display_name(i));
           page_append("</td>");
           page_append("<td>");
           page_append_uint((unsigned long)appDb.slaveConfig[i].slaveAddress);
@@ -756,8 +864,8 @@ static void render_register_section(void)
       has_slave = 1;
       page_append("<option value=\"");
       page_append_uint((unsigned long)i);
-      page_append("\">idx ");
-      page_append_uint((unsigned long)i);
+      page_append("\">");
+      page_append_html_escaped(slave_display_name(i));
       page_append(" - addr ");
       page_append_uint((unsigned long)appDb.slaveConfig[i].slaveAddress);
       page_append("</option>");
@@ -822,10 +930,10 @@ static void http_write(struct netconn *conn, const char *s)
         err = netconn_write(conn, p, chunk, NETCONN_COPY);
         if (err == ERR_MEM) {
           /* Let TCP task drain queued segments before retrying. */
-          sys_msleep(1u);
+          sys_msleep(2u);
         }
         retry++;
-      } while ((err == ERR_MEM) && (retry < 50u));
+      } while ((err == ERR_MEM) && (retry < 200u));
 
       if (err != ERR_OK) {
         /* Stop on persistent socket error; caller will close connection. */
@@ -847,62 +955,303 @@ static void http_write_uint(struct netconn *conn, unsigned long v)
   }
 }
 
+
+/* Helper: stream float value with fixed precision without using printf float support */
+static void http_write_float(struct netconn *conn, float v)
+{
+  int neg = 0;
+  if (v < 0.0f) {
+    neg = 1;
+    v = -v;
+  }
+
+  unsigned long ip = (unsigned long)v;
+  float fracf = v - (float)ip;
+  unsigned long frac = (unsigned long)(fracf * 1000.0f + 0.5f);
+  if (frac >= 1000u) {
+    ip += 1u;
+    frac -= 1000u;
+  }
+
+  http_write_uint(conn, ip);
+  http_write(conn, ".");
+
+  char fbuf[4];
+  fbuf[0] = '0' + (char)((frac / 100u) % 10u);
+  fbuf[1] = '0' + (char)((frac / 10u) % 10u);
+  fbuf[2] = '0' + (char)(frac % 10u);
+  fbuf[3] = '\0';
+  http_write(conn, fbuf);
+}
+
+static void http_write_html_escaped(struct netconn *conn, const char *text)
+{
+  if ((conn == NULL) || (text == NULL)) {
+    return;
+  }
+
+  while (*text != '\0') {
+    switch (*text) {
+      case '&':
+        http_write(conn, "&amp;");
+        break;
+      case '<':
+        http_write(conn, "&lt;");
+        break;
+      case '>':
+        http_write(conn, "&gt;");
+        break;
+      case '"':
+        http_write(conn, "&quot;");
+        break;
+      case '\'':
+        http_write(conn, "&#39;");
+        break;
+      default: {
+        char c[2];
+        c[0] = *text;
+        c[1] = '\0';
+        http_write(conn, c);
+        break;
+      }
+    }
+    text++;
+  }
+}
+
+static void http_write_json_escaped(struct netconn *conn, const char *text)
+{
+  if ((conn == NULL) || (text == NULL)) {
+    return;
+  }
+
+  while (*text != '\0') {
+    switch (*text) {
+      case '\\':
+        http_write(conn, "\\\\");
+        break;
+      case '"':
+        http_write(conn, "\\\"");
+        break;
+      case '\b':
+        http_write(conn, "\\b");
+        break;
+      case '\f':
+        http_write(conn, "\\f");
+        break;
+      case '\n':
+        http_write(conn, "\\n");
+        break;
+      case '\r':
+        http_write(conn, "\\r");
+        break;
+      case '\t':
+        http_write(conn, "\\t");
+        break;
+      default: {
+        char c[2];
+        c[0] = *text;
+        c[1] = '\0';
+        http_write(conn, c);
+        break;
+      }
+    }
+    text++;
+  }
+}
+
 /* PORT CONFIGURATION PAGE - Lightweight, fast */
 void app_config_http_send_port_form(struct netconn *conn)
 {
   uint8_t i;
+  uint8_t current_port = 0u;
+  static const unsigned long baud_rates[] = {9600ul, 14400ul, 19200ul, 38400ul, 56000ul, 57600ul, 115200ul};
+  uint8_t baud_index;
+  uint8_t current_baud_found = 0u;
+
+  if (appDb.ports[0].portId < (uartPortId_t)MAX_UART_PORTS) {
+    current_port = (uint8_t)appDb.ports[0].portId;
+  }
 
   http_write(conn,
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: text/html\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-    "<title>Port Config</title>"
-    "<style>body{font-family:Arial,sans-serif;max-width:600px;margin:20px auto}form{background:#f9f9f9;padding:15px;border-radius:4px}input,select{padding:6px;margin:5px}button{padding:8px 15px;background:#0066cc;color:white;border:none;cursor:pointer;border-radius:4px}button:hover{background:#0052a3}</style>"
-    "</head><body>"
-    "<h1>UART Port Configuration</h1>"
-    "<form method='POST' action='/save_modbus_config'>\n"
-    "<input type='hidden' name='action' value='save_port'>\n"
-    "<p><label>Port:<br><select name='port_id'>"
+    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+    "<title>UART Port Configuration</title>"
+    "<style>"
+    ":root{--primary:#0b5dbb;--primary2:#0e6bd8;--surface:#f5f7fa;--card:#ffffff;--soft:#eef2f7;--text:#18222d;--muted:#697386;--border:#d7dde6;--danger:#b00020;--radius:24px;--shadow:0 8px 24px rgba(18,38,63,.08);}"
+    "*{box-sizing:border-box;margin:0;padding:0;}"
+    "body{min-height:100vh;background:var(--surface);color:var(--text);display:flex;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}"
+    "a{text-decoration:none;color:inherit;}"
+    ".sidebar{width:256px;background:#eef3f8;border-right:1px solid rgba(0,0,0,.06);padding:18px 16px;display:flex;flex-direction:column;gap:18px;height:100vh;position:sticky;top:0;}"
+    ".brand h1{font-size:22px;line-height:1.1;font-weight:900;letter-spacing:-.03em;color:#0d4f99;text-transform:uppercase;}"
+    ".brand p{font-size:12px;color:var(--muted);margin-top:2px;font-weight:600;}"
+    ".nav{display:flex;flex-direction:column;gap:6px;flex:1;}"
+    ".nav-link{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;color:#556070;font-weight:600;font-size:14px;}"
+    ".nav-link.active{background:#fff;color:#0d4f99;box-shadow:0 1px 3px rgba(0,0,0,.08);}"
+    ".nav-link .icon{width:18px;text-align:center;font-size:15px;}"
+    ".menu{display:flex;flex-direction:column;gap:8px;}"
+    ".menu > summary{list-style:none;cursor:pointer;user-select:none;}"
+    ".menu > summary::-webkit-details-marker{display:none;}"
+    ".menu-links{display:flex;flex-direction:column;gap:6px;padding-left:12px;margin-top:-2px;}"
+    ".menu-link{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;color:#5c6673;font-size:13px;font-weight:600;}"
+    ".menu-link.active{background:#fff;color:#0d4f99;box-shadow:0 1px 3px rgba(0,0,0,.08);}"
+    ".menu-link .bullet{width:6px;height:6px;border-radius:50%;background:#93a4ba;}"
+    ".menu-link.active .bullet{background:#0d4f99;}"
+    ".sidebar-footer{margin-top:auto;display:flex;flex-direction:column;gap:12px;}"
+    ".status-badge{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#dde6f0;border-radius:14px;font-size:11px;font-weight:800;color:#0d4f99;}"
+    ".dot{width:8px;height:8px;border-radius:50%;background:#25c26e;animation:pulse 2s infinite;}"
+    "@keyframes pulse{0%{transform:scale(1);opacity:1;}50%{transform:scale(.82);opacity:.55;}100%{transform:scale(1);opacity:1;}}"
+    ".main{flex:1;min-width:0;}"
+    ".topbar{height:72px;background:#fff;border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:10;}"
+    ".top-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}"
+    ".title{font-size:20px;font-weight:800;letter-spacing:-.03em;}"
+    ".tag{display:inline-flex;align-items:center;padding:4px 8px;background:#eef2f7;border-radius:8px;font-size:10px;font-weight:800;color:#6f7b8e;text-transform:uppercase;letter-spacing:.04em;}"
+    ".top-right{display:flex;align-items:center;gap:14px;}"
+    ".icons{display:flex;gap:12px;color:#0d4f99;font-size:18px;}"
+    ".btn-danger{border:0;background:var(--danger);color:#fff;font-weight:800;font-size:12px;padding:10px 16px;border-radius:12px;cursor:pointer;box-shadow:0 6px 16px rgba(176,0,32,.18);}"
+    ".avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#cfd8e3,#8aa0bd);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.12);}"
+    ".content{padding:26px;max-width:1220px;margin:0 auto;width:100%;}"
+    ".grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:22px;justify-items:center;}"
+    ".card{background:#fff;border-radius:24px;box-shadow:var(--shadow);padding:28px;}"
+    ".hero{grid-column:1 / -1;max-width:760px;width:100%;}"
+    ".side{grid-column:span 5;display:flex;flex-direction:column;gap:22px;}"
+    ".hero-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:28px;}"
+    ".hero-head h2{font-size:28px;line-height:1.1;font-weight:900;letter-spacing:-.04em;margin-bottom:8px;}"
+    ".hero-head p{font-size:14px;color:var(--muted);max-width:520px;}"
+    ".chip{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:#eaf1fb;color:#0d4f99;font-size:20px;flex:0 0 auto;}"
+    ".form{display:grid;gap:18px;}"
+    ".row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;}"
+    ".field{display:flex;flex-direction:column;gap:8px;}"
+    ".field label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#6c7684;}"
+    ".control{width:100%;border:0;background:#eef2f7;border-bottom:2px solid transparent;border-radius:14px 14px 0 0;padding:14px 16px;font-size:15px;font-weight:600;outline:none;color:#17212d;}"
+    ".control:focus{border-bottom-color:var(--primary);background:#e8eef7;}"
+    "select.control{appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke='%23707a8a'%3E%3Cpath stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%222%22 d=%22M19 9l-7 7-7-7%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 14px center;background-size:16px;padding-right:42px;}"
+    ".submit{margin-top:10px;width:100%;border:0;border-radius:14px;background:linear-gradient(90deg,var(--primary),var(--primary2));color:#fff;font-weight:800;font-size:15px;padding:16px 18px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;box-shadow:0 10px 22px rgba(11,93,187,.22);}"
+    ".diag{background:#f4f7fb;border-radius:24px;padding:22px;box-shadow:var(--shadow);flex:1;display:flex;flex-direction:column;gap:16px;}"
+    ".diag h3{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#6c7684;}"
+    ".schematic{width:100%;height:220px;border-radius:16px;background:linear-gradient(180deg,#fbfcfe,#eef2f7);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;padding:18px;color:#8a95a4;font-size:14px;font-weight:700;text-align:center;}"
+    ".metric{display:flex;flex-direction:column;gap:8px;}"
+    ".metric-top{display:flex;justify-content:space-between;gap:12px;font-size:13px;font-weight:600;}"
+    ".metric-top .val{color:#0d4f99;font-weight:800;}"
+    ".bar{height:7px;background:#d9e2ee;border-radius:999px;overflow:hidden;}"
+    ".fill{height:100%;background:#0d4f99;border-radius:inherit;}"
+    ".mini{background:#fff;border-radius:24px;padding:20px;display:flex;align-items:center;gap:16px;box-shadow:var(--shadow);}"
+    ".mini-icon{width:52px;height:52px;border-radius:50%;background:#eef2f7;display:flex;align-items:center;justify-content:center;color:#0d4f99;font-size:20px;flex:0 0 auto;}"
+    ".mini h4{font-size:16px;font-weight:900;margin-bottom:4px;}"
+    ".mini p{font-size:13px;color:var(--muted);}"
+    ".mini-btn{margin-left:auto;border:0;background:transparent;color:#7b8796;font-size:18px;cursor:pointer;}"
+    ".stats{grid-column:span 12;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;}"
+    ".stat{background:#f4f7fb;border-radius:24px;padding:20px;display:flex;align-items:center;gap:14px;}"
+    ".stat .icon{width:40px;height:40px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:0 2px 8px rgba(0,0,0,.06);}"
+    ".label{display:block;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#6c7684;margin-bottom:4px;}"
+    ".value{font-size:15px;font-weight:800;}"
+    "@media (max-width: 1024px){body{flex-direction:column}.sidebar{width:100%;height:auto;position:static}.hero,.side,.stats{grid-column:span 12}.stats{grid-template-columns:1fr}.row{grid-template-columns:1fr}.content{padding:18px}.topbar{position:static;height:auto;padding:16px 18px;gap:12px;flex-wrap:wrap}}"
+    "@media (max-width: 640px){.top-right{width:100%;justify-content:space-between;flex-wrap:wrap}.card,.diag,.mini,.stat{padding:18px}.hero-head h2{font-size:24px}.topbar{padding:14px 16px}.content{padding:14px}}"
+    "</style></head><body>"
+    "<aside class='sidebar'>"
+    "<div class='brand'><h1>HealthSystems</h1><p>Precision Node 04</p></div>"
+    "<nav class='nav'>"
+    "<a class='nav-link' href='/'><span class='icon'>⌂</span><span>Dashboard</span></a>"
+    "<a class='nav-link' href='/config.html'><span class='icon'>⌁</span><span>Network</span></a>"
+    "<a class='nav-link' href='/modbus_values.html'><span class='icon'>◫</span><span>Communication</span></a>"
+    "<details class='menu' open>"
+    "<summary class='nav-link active'><span class='icon'>⚙</span><span>Maintenance</span></summary>"
+    "<div class='menu-links'>"
+    "<a class='menu-link active' href='/modbus_config_port.html'><span class='bullet'></span><span>Port</span></a>"
+    "<a class='menu-link' href='/modbus_config_slaves.html'><span class='bullet'></span><span>Slaves</span></a>"
+    "<a class='menu-link' href='/modbus_config_registers.html'><span class='bullet'></span><span>Registers</span></a>"
+    "</div></details>"
+    "</nav>"
+    "</aside>"
+    "<main class='main'>"
+    "<header class='topbar'>"
+    "<div class='top-left'><span class='title'>UART Port Configuration</span><span class='tag'>Maintenance Mode</span></div>"
+    "</header>"
+    "<div class='content'><div class='grid'>"
+    "<section class='card hero'>"
+    "<div class='hero-head'><div><h2>Port Parameters</h2><p>Configure serial communication between Precision Node and external telemetry.</p></div><div class='chip'>⌘</div></div>"
+    "<form class='form' method='POST' action='/save_modbus_config' id='configForm'>"
+    "<input type='hidden' name='action' value='save_port'>"
+    "<div class='row'>"
+    "<div class='field'><label for='port_id'>Port Selection</label><select class='control' id='port_id' name='port_id'>"
   );
 
   for (i = 0; i < MAX_UART_PORTS; i++) {
     http_write(conn, "<option value='");
     http_write_uint(conn, (unsigned long)i);
     http_write(conn, "' ");
-    if (appDb.ports[0].portId == (uartPortId_t)i) {
+    if (current_port == i) {
       http_write(conn, "selected");
     }
-    http_write(conn, ">UART");
+    http_write(conn, ">UART_PORT_");
+    if ((i + 1u) < 10u) {
+      http_write(conn, "0");
+    }
     http_write_uint(conn, (unsigned long)(i + 1u));
     http_write(conn, "</option>");
   }
 
-  http_write(conn, "</select></label></p>\n");
+  http_write(conn,
+    "</select></div>"
+    "<div class='field'><label for='baud'>Baud Rate (bps)</label><select class='control' id='baud' name='baud'>");
 
-  http_write(conn, "<p><label>Baud rate:<br><input name='baud' value='");
-  http_write_uint(conn, (unsigned long)appDb.ports[0].baudRate);
-  http_write(conn, "' style='width:200px'></label></p>\n");
+  for (baud_index = 0u; baud_index < (uint8_t)(sizeof(baud_rates) / sizeof(baud_rates[0])); baud_index++) {
+    http_write(conn, "<option value='");
+    http_write_uint(conn, baud_rates[baud_index]);
+    http_write(conn, "' ");
+    if (appDb.ports[0].baudRate == baud_rates[baud_index]) {
+      http_write(conn, "selected");
+      current_baud_found = 1u;
+    }
+    http_write(conn, ">");
+    http_write_uint(conn, baud_rates[baud_index]);
+    http_write(conn, "</option>");
+  }
 
-  http_write(conn, "<p><label>Stop bits (1 or 2):<br><input name='stop_bits' value='");
-  http_write_uint(conn, (unsigned long)appDb.ports[0].stopBits);
-  http_write(conn, "' style='width:200px'></label></p>\n");
-
-  http_write(conn, "<p><label>Parity (0=None, 1=Even, 2=Odd):<br><input name='parity' value='");
-  http_write_uint(conn, (unsigned long)appDb.ports[0].parity);
-  http_write(conn, "' style='width:200px'></label></p>\n");
-
-  http_write(conn, "<p><button type='submit'>Save Port</button></p></form>\n");
+  if (current_baud_found == 0u) {
+    http_write(conn, "<option value='");
+    http_write_uint(conn, (unsigned long)appDb.ports[0].baudRate);
+    http_write(conn, "' selected>");
+    http_write_uint(conn, (unsigned long)appDb.ports[0].baudRate);
+    http_write(conn, "</option>");
+  }
 
   http_write(conn,
-    "<hr><p><strong>Navigation:</strong></p>"
-    "<p><a href='/modbus_config_slaves.html'>Configure Slaves</a></p>"
-    "<p><a href='/modbus_config_registers.html'>Configure Registers</a></p>"
-    "<p><a href='/modbus_values.html'>View Values</a></p>"
-    "<p><a href='/config.html'>Network Config</a></p>"
-    "<p><a href='/'>Home</a></p>"
-    "</body></html>"
+    "</select></div></div>"
+    "<div class='row'>"
+    "<div class='field'><label for='stop_bits'>Stop Bits</label><select class='control' id='stop_bits' name='stop_bits'>"
+    "<option value='1' ");
+  if (appDb.ports[0].stopBits == 1u) {
+    http_write(conn, "selected");
+  }
+  http_write(conn, ">1 bit</option><option value='2' ");
+  if (appDb.ports[0].stopBits == 2u) {
+    http_write(conn, "selected");
+  }
+  http_write(conn,
+    ">2 bits</option></select></div>"
+    "<div class='field'><label for='parity'>Parity Control</label><select class='control' id='parity' name='parity'>"
+    "<option value='0' ");
+  if (appDb.ports[0].parity == PARITY_NONE) {
+    http_write(conn, "selected");
+  }
+  http_write(conn, ">None</option><option value='1' ");
+  if (appDb.ports[0].parity == PARITY_EVEN) {
+    http_write(conn, "selected");
+  }
+  http_write(conn, ">Even</option><option value='2' ");
+  if (appDb.ports[0].parity == PARITY_ODD) {
+    http_write(conn, "selected");
+  }
+  http_write(conn,
+    ">Odd</option></select></div></div>"
+    "<button class='submit' type='submit'><span></span><span>Save Port Configuration</span></button>"
+    "</form></section>"
+    "</div></div></main></body></html>"
   );
 }
 
@@ -922,13 +1271,13 @@ void app_config_http_send_slaves_form(struct netconn *conn)
     "</head><body>"
     "<h1>Configure Modbus Slaves</h1>"
     "<h2>Current Slaves</h2>"
-    "<table><tr><th>Index</th><th>Address</th><th>Port</th><th>Registers</th><th>Action</th></tr>"
+    "<table><tr><th>Name</th><th>Address</th><th>Port</th><th>Registers</th><th>Action</th></tr>"
   );
 
   for (i = 0; i < MAX_SLAVES; i++) {
     if (appDb.slaveConfig[i].used == 1u) {
       http_write(conn, "<tr><td>");
-      http_write_uint(conn, (unsigned long)i);
+      http_write_html_escaped(conn, slave_display_name(i));
       http_write(conn, "</td><td>");
       http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
       http_write(conn, "</td><td>UART");
@@ -951,6 +1300,7 @@ void app_config_http_send_slaves_form(struct netconn *conn)
     "<h2>Add New Slave</h2>"
     "<form method='POST' action='/save_modbus_config'>"
     "<input type='hidden' name='action' value='add_slave'>"
+    "<p><label>Slave Name:<br><input name='slave_name' maxlength='23' style='width:200px' required></label></p>"
     "<p><label>Slave Address (1..247):<br><input name='slave_address' style='width:200px' required></label></p>"
     "<p><label>UART Port:<br><select name='slave_port'>"
   );
@@ -994,7 +1344,7 @@ void app_config_http_send_registers_form(struct netconn *conn)
     "</head><body>"
     "<h1>Configure Modbus Registers</h1>"
     "<h2>Current Registers</h2>"
-    "<table><tr><th>Slave Idx</th><th>Slave Addr</th><th>Reg Address</th><th>Type</th><th>Action</th></tr>"
+    "<table><tr><th>Slave Name</th><th>Slave Addr</th><th>Reg Address</th><th>Type</th><th>Action</th></tr>"
   );
 
   for (i = 0; i < MAX_SLAVES; i++) {
@@ -1002,7 +1352,7 @@ void app_config_http_send_registers_form(struct netconn *conn)
       for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
         if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
           http_write(conn, "<tr><td>");
-          http_write_uint(conn, (unsigned long)i);
+          http_write_html_escaped(conn, slave_display_name(i));
           http_write(conn, "</td><td>");
           http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
           http_write(conn, "</td><td>");
@@ -1037,8 +1387,8 @@ void app_config_http_send_registers_form(struct netconn *conn)
       has_slave = 1;
       http_write(conn, "<option value='");
       http_write_uint(conn, (unsigned long)i);
-      http_write(conn, "'>idx ");
-      http_write_uint(conn, (unsigned long)i);
+      http_write(conn, "'>");
+      http_write_html_escaped(conn, slave_display_name(i));
       http_write(conn, " - addr ");
       http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
       http_write(conn, "</option>");
@@ -1060,6 +1410,51 @@ void app_config_http_send_registers_form(struct netconn *conn)
   if (has_slave == 0) {
     http_write(conn, "<p style='color:#900;font-weight:bold'>No slaves configured. Add a slave first!</p>");
   }
+
+  http_write(conn,
+    "<h2>Alarm thresholds</h2>"
+    "<p>Set one upper threshold for each register. If the value goes above it, alarm becomes active.</p>"
+    "<form method='POST' action='/save_modbus_config'>"
+    "<input type='hidden' name='action' value='update_alarm_thresholds_all'>"
+    "<table><tr><th>Slave Name</th><th>Reg Address</th><th>Enabled</th><th>Threshold</th><th>Status</th></tr>"
+  );
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
+          http_write(conn, "<tr><td>");
+          http_write_html_escaped(conn, slave_display_name(i));
+          http_write(conn, "</td><td>");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+          http_write(conn, "</td><td><select name='alarm_enabled_");
+          http_write_uint(conn, (unsigned long)i);
+          http_write(conn, "_");
+          http_write_uint(conn, (unsigned long)j);
+          http_write(conn, "'><option value='0' ");
+          if (appDb.slaveConfig[i].registerConfig[j].alarmEnabled == 0u) {
+            http_write(conn, "selected");
+          }
+          http_write(conn, ">Off</option><option value='1' ");
+          if (appDb.slaveConfig[i].registerConfig[j].alarmEnabled == 1u) {
+            http_write(conn, "selected");
+          }
+          http_write(conn, ">On</option></select>");
+          http_write(conn, "</td><td><input name='alarm_threshold_");
+          http_write_uint(conn, (unsigned long)i);
+          http_write(conn, "_");
+          http_write_uint(conn, (unsigned long)j);
+          http_write(conn, "' type='number' step='0.001' value='");
+          http_write_float(conn, appDb.slaveConfig[i].registerConfig[j].alarmThreshold);
+          http_write(conn, "' style='width:100px'></td><td>");
+          http_write(conn, appDb.slaveConfig[i].registerConfig[j].alarmActive ? "ALARM" : (appDb.slaveConfig[i].registerConfig[j].alarmEnabled ? "enabled" : "off"));
+          http_write(conn, "</td></tr>");
+        }
+      }
+    }
+  }
+
+  http_write(conn, "</table><p><button type='submit'>Save all thresholds</button></p></form>");
 
   http_write(conn,
     "<hr><p><strong>Navigation:</strong></p>"
@@ -1084,80 +1479,254 @@ void app_config_http_send_form(struct netconn *conn)
   );
 }
 
-/* Helper: stream float value with fixed precision without using printf float support */
-static void http_write_float(struct netconn *conn, float v)
-{
-  int neg = 0;
-  if (v < 0.0f) {
-    neg = 1;
-    v = -v;
-  }
 
-  unsigned long ip = (unsigned long)v;
-  float fracf = v - (float)ip;
-  unsigned long frac = (unsigned long)(fracf * 1000.0f + 0.5f);
-  if (frac >= 1000u) {
-    ip += 1u;
-    frac -= 1000u;
-  }
-
-  if (neg) {
-    http_write(conn, "-");
-  }
-
-  http_write_uint(conn, ip);
-  http_write(conn, ".");
-
-  char fbuf[4];
-  fbuf[0] = '0' + (char)((frac / 100u) % 10u);
-  fbuf[1] = '0' + (char)((frac / 10u) % 10u);
-  fbuf[2] = '0' + (char)(frac % 10u);
-  fbuf[3] = '\0';
-  http_write(conn, fbuf);
-}
 
 /* Debug page: show lastValue and valid flags for all configured registers */
 void app_config_http_send_values(struct netconn *conn)
 {
   uint8_t i, j;
+  uint8_t alarm_count = 0u;
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if ((appDb.slaveConfig[i].registerConfig[j].used == 1u) &&
+            (appDb.slaveConfig[i].registerConfig[j].alarmActive == 1u)) {
+          alarm_count++;
+        }
+      }
+    }
+  }
 
   http_write(conn,
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: text/html\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "<!doctype html><html><head><meta charset=\"utf-8\"><title>Modbus Values</title></head>"
-    "<body style=\"font-family:Arial,sans-serif;max-width:980px;margin:20px auto;\">"
-    "<h1>Modbus Values</h1>"
-    "<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">"
-    "<tr><th>Slave idx</th><th>Slave addr</th><th>Reg addr</th><th>Type</th><th>Last value</th><th>Valid</th></tr>"
+    "<!DOCTYPE html><html lang='en'><head>"
+    "<meta charset='utf-8'/>"
+    "<meta content='width=device-width, initial-scale=1.0' name='viewport'/>"
+    "<title>Clinical Precision Dashboard | Modbus Values</title>"
+    "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'/>"
+    "<link href='https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap' rel='stylesheet'/>"
+    "<style>"
+    ":root{--primary:#00478d;--primary-container:#005eb8;--secondary:#5c5f63;--tertiary:#ba1a1a;--surface:#f7faf9;--surface-container-low:#f1f4f3;--surface-container-lowest:#ffffff;--on-surface:#181c1c;--on-surface-variant:#424752;--outline-variant:#c2c6d4;--error-container:#ffdad6;--on-error-container:#93000a;--text-main:#181c1c;--text-secondary:#64748b;}"
+    "*{box-sizing:border-box;margin:0;padding:0;}"
+    "body{font-family:'Inter',sans-serif;background-color:var(--surface);color:var(--text-main);display:flex;min-height:100vh;overflow:hidden;}"
+    "aside{width:256px;background-color:var(--surface-container-low);border-right:1px solid var(--outline-variant);display:flex;flex-direction:column;padding:24px 16px;}"
+    ".brand{margin-bottom:40px;padding-left:8px;}"
+    ".brand h1{font-size:20px;font-weight:900;color:var(--primary);letter-spacing:-0.025em;}"
+    ".brand p{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--secondary);font-weight:700;opacity:0.7;}"
+    "nav{flex:1;}"
+    ".nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;text-decoration:none;color:#475569;font-size:14px;font-weight:500;border-radius:8px;margin-bottom:4px;transition:background 0.2s;}"
+    ".nav-item:hover{background-color:#e2e8f0;}"
+    ".nav-item.active{background-color:var(--surface-container-lowest);color:var(--primary);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.05);}"
+    ".sidebar-footer{padding-top:16px;border-top:1px solid var(--outline-variant);}"
+    ".status-pill{display:flex;align-items:center;gap:12px;padding:8px;}"
+    ".status-icon{width:32px;height:32px;border-radius:50%;background-color:var(--primary-container);color:white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}"
+    ".status-text p:first-child{font-size:12px;font-weight:700;}.status-text p:last-child{font-size:10px;color:#16a34a;font-weight:600;}"
+    "main{flex:1;display:flex;flex-direction:column;overflow-y:auto;}"
+    "header{height:64px;display:flex;justify-content:space-between;align-items:center;padding:0 32px;background-color:var(--surface);position:sticky;top:0;z-index:10;}"
+    ".header-left{display:flex;align-items:center;gap:16px;}.header-left h2{font-size:18px;font-weight:700;color:#0f172a;}.divider{width:1px;height:16px;background-color:var(--outline-variant);}.breadcrumb{font-size:14px;font-weight:500;color:var(--text-secondary);}"
+    ".header-right{display:flex;align-items:center;gap:24px;}.icon-actions{display:flex;gap:12px;color:#94a3b8;}.icon-btn{background:none;border:none;cursor:pointer;padding:8px;border-radius:50%;transition:background 0.2s;position:relative;}.icon-btn:hover{background-color:#f1f5f9;}.notification-dot{position:absolute;top:8px;right:8px;width:8px;height:8px;background-color:var(--tertiary);border:2px solid var(--surface);border-radius:50%;}.user-profile{display:flex;align-items:center;gap:12px;padding-left:16px;border-left:1px solid var(--outline-variant);}.user-info{text-align:right;}.user-info p:first-child{font-size:12px;font-weight:700;color:#1e293b;}.user-info p:last-child{font-size:10px;color:var(--text-secondary);}.user-avatar{width:36px;height:36px;border-radius:50%;border:2px solid white;box-shadow:0 1px 2px rgba(0,0,0,0.1);}"
+    ".content-body{padding:32px;max-width:1200px;}"
+    ".alert-banner{background-color:var(--error-container);color:var(--on-error-container);padding:16px;border-radius:12px;border-left:4px solid var(--tertiary);display:flex;justify-content:space-between;align-items:center;margin-bottom:32px;}"
+    ".alert-content{display:flex;align-items:center;gap:16px;}.alert-icon{width:40px;height:40px;background-color:var(--tertiary);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;}.alert-text h3{font-size:14px;font-weight:700;}.alert-text p{font-size:12px;opacity:0.8;}.ack-btn{background:rgba(255,255,255,0.2);border:none;padding:6px 12px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;text-transform:uppercase;}"
+    ".page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;gap:16px;}.page-title h2{font-size:30px;font-weight:900;letter-spacing:-0.025em;}.page-title p{font-size:14px;color:var(--text-secondary);}.button-group{display:flex;gap:8px;flex-wrap:wrap;}.btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;transition:opacity 0.2s;}.btn-outline{background:var(--surface-container-lowest);border-color:var(--outline-variant);color:#475569;}.btn-primary{background:var(--primary);color:white;box-shadow:0 4px 6px -1px rgba(0,71,141,0.2);}"
+    ".table-container{background:var(--surface-container-lowest);border-radius:16px;border:1px solid rgba(0,0,0,0.05);overflow:hidden;box-shadow:0 4px 12px rgba(0,71,141,0.04);margin-bottom:32px;}table{width:100%;border-collapse:collapse;}thead{background:var(--surface-container-low);}th{padding:16px 24px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;font-weight:900;color:#64748b;}td{padding:16px 24px;border-bottom:1px solid #f1f5f9;font-size:14px;vertical-align:middle;}.slave-name{font-weight:700;color:#1e293b;}.val-unit{font-size:10px;color:#94a3b8;font-weight:700;margin-left:4px;}.val-large{font-size:18px;font-weight:900;}.type-tag{background:#f1f5f9;font-family:monospace;padding:2px 8px;border-radius:4px;font-size:12px;}.status-alarm{background:var(--tertiary);color:white;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:900;display:inline-flex;align-items:center;gap:6px;}.pulse{width:6px;height:6px;background:white;border-radius:50%;animation:pulse-anim 1s infinite;}@keyframes pulse-anim{0%{opacity:1;}50%{opacity:0.4;}100%{opacity:1;}}.status-off{color:#94a3b8;font-weight:700;text-transform:uppercase;font-size:10px;}"
+    ".bento-grid{display:grid;grid-template-columns:repeat(12, 1fr);gap:24px;margin-top:32px;}.bento-large{grid-column:span 8;background:var(--surface-container-low);padding:24px;border-radius:16px;position:relative;min-height:180px;}.bento-small{grid-column:span 4;background:var(--primary);color:white;padding:24px;border-radius:16px;display:flex;flex-direction:column;justify-content:space-between;}.bento-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--primary);margin-bottom:8px;}.bento-small .bento-label{color:#a9c7ff;}.bento-title{font-size:24px;font-weight:900;color:#1e293b;max-width:400px;}.progress-bar{height:4px;background:#e2e8f0;border-radius:2px;margin-top:24px;width:100%;position:relative;}.progress-fill{height:100%;background:var(--primary);border-radius:2px;width:84%;}"
+    "footer{margin-top:32px;padding-top:24px;border-top:1px solid var(--outline-variant);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}.back-link{text-decoration:none;color:var(--primary);font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}.session-info{font-size:10px;color:#94a3b8;font-weight:500;}.material-symbols-outlined{font-size:20px;vertical-align:middle;}"
+    "@media (max-width: 1024px){body{flex-direction:column;overflow:auto;}aside{width:100%;border-right:none;border-bottom:1px solid var(--outline-variant);}main{overflow:visible;}header{height:auto;padding:16px 20px;gap:12px;flex-wrap:wrap;}.content-body{padding:20px;}.bento-large,.bento-small{grid-column:span 12;}.page-header{align-items:flex-start;flex-direction:column;}.header-right{width:100%;justify-content:space-between;flex-wrap:wrap;}.user-profile{padding-left:0;border-left:none;}}"
+    "@media (max-width: 640px){header{padding:14px 16px;}.content-body{padding:16px;}.page-title h2{font-size:24px;}.button-group{width:100%;}.btn{justify-content:center;flex:1 1 140px;}.table-container{overflow-x:auto;}th,td{padding:12px 14px;white-space:nowrap;}}"
+    "</style></head><body>"
+    "<aside>"
+    "<div class='brand'><h1>HealthSystems</h1><p>Precision Node 04</p></div>"
+    "<nav>"
+    "<a class='nav-item' href='/'><span class='material-symbols-outlined'>dashboard</span>Dashboard</a>"
+    "<a class='nav-item' href='/config.html'><span class='material-symbols-outlined'>hub</span>Network</a>"
+    "<a class='nav-item active' href='/modbus_values.html'><span class='material-symbols-outlined' style='font-variation-settings: \'FILL\' 1;'>chat</span>Communication</a>"
+    "<a class='nav-item' href='/modbus_config_port.html'><span class='material-symbols-outlined'>build</span>Maintenance</a>"
+    "</nav>"
+    "<div class='sidebar-footer'><div class='status-pill'><div class='status-icon'>SN04</div><div class='status-text'><p>System Status</p><p>Nominal</p></div></div></div>"
+    "</aside>"
+    "<main>"
+    "<header>"
+    "<div class='header-left'><h2>Clinical Precision Dashboard</h2><div class='divider'></div><span class='breadcrumb'>Node / Modbus Values</span></div>"
+    "<div class='header-right'><div class='icon-actions'><button class='icon-btn' type='button' id='ackBtn'><span class='material-symbols-outlined'>notifications</span><span class='notification-dot'></span></button><button class='icon-btn' type='button' onclick='fetchValues()'><span class='material-symbols-outlined'>refresh</span></button></div></div>"
+    "</header>"
+    "<div class='content-body'>"
+  );
+
+  if (alarm_count > 0u) {
+    http_write(conn, "<div id='alarmBanner' class='alert-banner'><div class='alert-content'><div class='alert-icon'><span class='material-symbols-outlined' style='font-variation-settings: \'FILL\' 1;'>warning</span></div><div class='alert-text'><h3>System Alert Triggered</h3><p>");
+    http_write_uint(conn, (unsigned long)alarm_count);
+    http_write(conn, " alarm(s) active - Action required on Node 04 Communication Layer.</p></div></div><button class='ack-btn' type='button'>Acknowledge</button></div>");
+  } else {
+    http_write(conn, "<div id='alarmBanner' class='alert-banner' style='background:var(--surface-container-lowest);color:var(--on-surface);border-left-color:#16a34a;'><div class='alert-content'><div class='alert-icon' style='background:#16a34a;'><span class='material-symbols-outlined' style='font-variation-settings: \'FILL\' 1;'>check_circle</span></div><div class='alert-text'><h3>No active alarms</h3><p>All monitored registers are within threshold.</p></div></div><button class='ack-btn' type='button'>Refresh</button></div>");
+  }
+
+  http_write(conn,
+    "<div class='page-header'><div class='page-title'><h2>Modbus Values</h2><p>Real-time telemetry stream from peripheral medical sensors.</p></div></div>"
+    "<div class='table-container'><table id='valuesTable'><thead><tr><th>Slave Name</th><th>Address</th><th>Register</th><th>Type</th><th>Value</th><th>Threshold</th><th>Status</th><th>Valid</th></tr></thead><tbody id='valuesBody'>"
   );
 
   for (i = 0; i < MAX_SLAVES; i++) {
     if (appDb.slaveConfig[i].used == 1u) {
       for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
-        if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
-          http_write(conn, "<tr><td>");
-          http_write_uint(conn, (unsigned long)i);
+        registerConfig_t *reg;
+
+        reg = &appDb.slaveConfig[i].registerConfig[j];
+        if (reg->used == 1u) {
+          http_write(conn, "<tr class='");
+          http_write(conn, reg->alarmActive ? "alarm" : (reg->alarmEnabled ? "enabled" : "ok"));
+          http_write(conn, "'><td>");
+          http_write_html_escaped(conn, slave_display_name(i));
           http_write(conn, "</td><td>");
           http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
           http_write(conn, "</td><td>");
-          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+          http_write_uint(conn, (unsigned long)reg->regAddress);
           http_write(conn, "</td><td>");
-          http_write(conn, register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
+          http_write(conn, register_type_to_text(reg->registerType));
           http_write(conn, "</td><td>");
-          http_write_float(conn, appDb.slaveConfig[i].registerConfig[j].lastValue);
+          if (reg->valid == 1u) {
+            http_write_float(conn, reg->lastValue);
+          } else {
+            http_write(conn, "n/a");
+          }
           http_write(conn, "</td><td>");
-          http_write(conn, appDb.slaveConfig[i].registerConfig[j].valid ? "yes" : "no");
+          if (reg->alarmEnabled == 1u) {
+            http_write_float(conn, reg->alarmThreshold);
+          } else {
+            http_write(conn, "off");
+          }
+          http_write(conn, "</td><td>");
+          http_write(conn, reg->alarmActive ? "ALARM" : (reg->alarmEnabled ? "enabled" : "off"));
+          http_write(conn, "</td><td>");
+          http_write(conn, reg->valid ? "yes" : "no");
           http_write(conn, "</td></tr>");
         }
       }
     }
   }
 
-  http_write(conn, "</table>");
-  http_write(conn, "<p><a href=\"/modbus_config.html\">Back to Modbus configuration</a></p>");
-  http_write(conn, "</body></html>");
+  http_write(conn, "</tbody></table></div>");
+
+
+
+  http_write(conn, "<footer><a class='back-link' href='/modbus_config_port.html'><span class='material-symbols-outlined'>arrow_back</span>Back to Modbus configuration</a><p class='session-info'>Live page updated from /api/modbus_values</p></footer>");
+
+  /* small polling script: fetch JSON every second and update table/banner (DOM-based, safer escaping) */
+  http_write(conn, "<script>\n");
+  http_write(conn, "function renderValues(data){\n");
+  http_write(conn, " var tbody = document.getElementById('valuesBody');\n");
+  http_write(conn, " tbody.innerHTML = '';\n");
+  http_write(conn, " data.registers.forEach(function(r){\n");
+  http_write(conn, "  var tr = document.createElement('tr');\n");
+  http_write(conn, "  tr.className = r.alarmActive ? 'alarm' : (r.alarmEnabled ? 'enabled' : 'ok');\n");
+  http_write(conn, "  function td(v){ var d = document.createElement('td'); d.textContent = v; return d; }\n");
+  http_write(conn, "  var nameCell = td(r.slaveName || ('Slave ' + (r.slaveIndex + 1))); nameCell.className = 'slave-name'; tr.appendChild(nameCell);\n");
+  http_write(conn, "  tr.appendChild(td(r.slaveAddress));\n");
+  http_write(conn, "  tr.appendChild(td(r.regAddress));\n");
+  http_write(conn, "  var typeCell = td(''); var typeTag = document.createElement('span'); typeTag.className = 'type-tag'; typeTag.textContent = r.type; typeCell.appendChild(typeTag); tr.appendChild(typeCell);\n");
+  http_write(conn, "  var valueCell = td(''); var valueWrap = document.createElement('span'); valueWrap.className = 'val-large'; valueWrap.textContent = r.valid ? r.lastValue : 'n/a'; valueCell.appendChild(valueWrap); tr.appendChild(valueCell);\n");
+  http_write(conn, "  var thresholdCell = td(''); if (r.alarmEnabled) { var thresholdWrap = document.createElement('span'); thresholdWrap.className = 'val-large'; thresholdWrap.textContent = r.alarmThreshold; thresholdCell.appendChild(thresholdWrap); } else { var off = document.createElement('span'); off.className = 'status-off'; off.textContent = 'off'; thresholdCell.appendChild(off); } tr.appendChild(thresholdCell);\n");
+  http_write(conn, "  var statusCell = td(''); if (r.alarmActive) { var s = document.createElement('span'); s.className = 'status-alarm'; var p = document.createElement('span'); p.className = 'pulse'; s.appendChild(p); s.appendChild(document.createTextNode('ALARM')); statusCell.appendChild(s); } else { var off2 = document.createElement('span'); off2.className = 'status-off'; off2.textContent = r.alarmEnabled ? 'enabled' : 'off'; statusCell.appendChild(off2); } tr.appendChild(statusCell);\n");
+  http_write(conn, "  var validCell = td(''); var icon = document.createElement('span'); icon.className = 'material-symbols-outlined'; icon.style.fontVariationSettings = '\\'FILL\\' 1'; icon.style.color = r.valid ? '#16a34a' : '#94a3b8'; icon.textContent = r.valid ? 'check_circle' : 'cancel'; validCell.appendChild(icon); tr.appendChild(validCell);\n");
+  http_write(conn, "  tbody.appendChild(tr);\n");
+  http_write(conn, " });\n");
+  http_write(conn, " var b = document.getElementById('alarmBanner');\n");
+  http_write(conn, " if (data.alarm_count > 0){ b.className='alert-banner'; b.style.background='var(--error-container)'; b.style.color='var(--on-error-container)'; b.style.borderLeftColor='var(--tertiary)'; b.innerHTML = '<div class=\\'alert-content\\'><div class=\\'alert-icon\\'><span class=\\'material-symbols-outlined\\' style=\\'font-variation-settings: \\\'FILL\\' 1;\\'>warning</span></div><div class=\\'alert-text\\'><h3>System Alert Triggered</h3><p>' + data.alarm_count + ' alarm(s) active - Action required on Node 04 Communication Layer.</p></div></div><button class=\\'ack-btn\\' type=\\'button\\'>Acknowledge</button>'; } else { b.className='alert-banner'; b.style.background='var(--surface-container-lowest)'; b.style.color='var(--on-surface)'; b.style.borderLeftColor='#16a34a'; b.innerHTML = '<div class=\\'alert-content\\'><div class=\\'alert-icon\\' style=\\'background:#16a34a;\\'><span class=\\'material-symbols-outlined\\' style=\\'font-variation-settings: \\\'FILL\\' 1;\\'>check_circle</span></div><div class=\\'alert-text\\'><h3>No active alarms</h3><p>All monitored registers are within threshold.</p></div></div><button class=\\'ack-btn\\' type=\\'button\\'>Refresh</button>'; }\n");
+  http_write(conn, "}\n");
+  http_write(conn, "function fetchValues(){ fetch('/api/modbus_values').then(function(r){ return r.json(); }).then(function(j){ renderValues(j); }).catch(function(){}); }\n");
+  http_write(conn, "document.getElementById('ackBtn').addEventListener('click', fetchValues);\n");
+  http_write(conn, "setInterval(fetchValues,1000);fetchValues();\n");
+  http_write(conn, "</script>");
+  http_write(conn, "</div></main></body></html>");
+}
+
+/* JSON endpoint used by the values page to refresh without reloading. */
+void app_config_http_send_api_values(struct netconn *conn)
+{
+  uint8_t i, j;
+  int first = 1;
+  uint8_t alarm_count = 0u;
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if ((appDb.slaveConfig[i].registerConfig[j].used == 1u) &&
+            (appDb.slaveConfig[i].registerConfig[j].alarmActive == 1u)) {
+          alarm_count++;
+        }
+      }
+    }
+  }
+
+  http_write(conn,
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: application/json\r\n"
+    "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+    "Pragma: no-cache\r\n"
+    "Expires: 0\r\n"
+    "Connection: close\r\n\r\n"
+  );
+
+  /* Write JSON object start including alarm_count */
+  http_write(conn, "{\"alarm_count\":");
+  http_write_uint(conn, (unsigned long)alarm_count);
+  http_write(conn, ",\"registers\":[");
+
+  for (i = 0; i < MAX_SLAVES; i++) {
+    if (appDb.slaveConfig[i].used == 1u) {
+      for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+        if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
+          if (!first) {
+            http_write(conn, ",");
+          }
+          first = 0;
+          http_write(conn, "{\"slaveIndex\":");
+          http_write_uint(conn, (unsigned long)i);
+
+          http_write(conn, ",\"slaveName\":\"");
+          http_write_json_escaped(conn, slave_display_name(i));
+          http_write(conn, "\"");
+
+          http_write(conn, ",\"slaveAddress\":");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
+
+          http_write(conn, ",\"regAddress\":");
+          http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].registerConfig[j].regAddress);
+
+          http_write(conn, ",\"type\":\"");
+          http_write(conn, register_type_to_text(appDb.slaveConfig[i].registerConfig[j].registerType));
+          http_write(conn, "\"");
+
+          http_write(conn, ",\"lastValue\":");
+          http_write_float(conn, appDb.slaveConfig[i].registerConfig[j].lastValue);
+
+          http_write(conn, ",\"valid\":");
+          http_write(conn, appDb.slaveConfig[i].registerConfig[j].valid ? "1" : "0");
+
+          http_write(conn, ",\"alarmEnabled\":");
+          http_write(conn, appDb.slaveConfig[i].registerConfig[j].alarmEnabled ? "1" : "0");
+
+          http_write(conn, ",\"alarmThreshold\":");
+          http_write_float(conn, appDb.slaveConfig[i].registerConfig[j].alarmThreshold);
+
+          http_write(conn, ",\"alarmActive\":");
+          http_write(conn, appDb.slaveConfig[i].registerConfig[j].alarmActive ? "1" : "0");
+
+          http_write(conn, "}");
+        }
+      }
+    }
+  }
+
+  /* Prepend alarm_count at top-level for quick banner */
+  /* We sent registers array already; to include alarm_count we rebuild small wrapper. Simpler: send as object with alarm_count then registers. */
+  /* Current output is '{"registers":[...'] so we need to reformat - easier to send properly from scratch. */
+  /* For simplicity, close registers array then prepend alarm_count by rewriting output: send closing and then a small wrapper. */
+  http_write(conn, "]}\n");
 }
 
 /*
@@ -1191,6 +1760,10 @@ void app_config_http_send_api_slaves(struct netconn *conn)
 
       http_write(conn, "{\"index\":");
       http_write_uint(conn, (unsigned long)i);
+
+      http_write(conn, ",\"name\":\"");
+      http_write_json_escaped(conn, slave_display_name(i));
+      http_write(conn, "\"");
 
       http_write(conn, ",\"address\":");
       http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
@@ -1241,6 +1814,10 @@ void app_config_http_send_api_registers(struct netconn *conn)
 
           http_write(conn, "{\"slave_index\":");
           http_write_uint(conn, (unsigned long)i);
+
+          http_write(conn, ",\"slave_name\":\"");
+          http_write_json_escaped(conn, slave_display_name(i));
+          http_write(conn, "\"");
 
           http_write(conn, ",\"slave_address\":");
           http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
@@ -1327,6 +1904,10 @@ void app_config_http_send_api_modbus_config(struct netconn *conn)
           http_write(conn, "{\"slave_index\":");
           http_write_uint(conn, (unsigned long)i);
 
+          http_write(conn, ",\"slave_name\":\"");
+          http_write_json_escaped(conn, slave_display_name(i));
+          http_write(conn, "\"");
+
           http_write(conn, ",\"slave_address\":");
           http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
 
@@ -1386,12 +1967,19 @@ void app_config_http_handle_save(struct netconn *conn, const char *request, unsi
   }
 
   if (strcmp(action, "add_slave") == 0) {
+    char v_name[MAX_SLAVE_NAME_LEN];
     char v_addr[8];
     char v_port[8];
 
     if ((!get_param(body, "slave_address", v_addr, sizeof(v_addr))) ||
+        (!get_param(body, "slave_name", v_name, sizeof(v_name))) ||
         (!get_param(body, "slave_port", v_port, sizeof(v_port)))) {
       send_status_page(conn, 0, "Slave fields are missing");
+      return;
+    }
+
+    if (v_name[0] == '\0') {
+      send_status_page(conn, 0, "Slave name is required");
       return;
     }
 
@@ -1405,8 +1993,8 @@ void app_config_http_handle_save(struct netconn *conn, const char *request, unsi
       return;
     }
 
-    if (appConfig_addSlave((uint8_t)n1, (uartPortId_t)n2) < 0) {
-      send_status_page(conn, 0, "Cannot add slave (duplicate or full table)");
+    if (appConfig_addSlave((uint8_t)n1, (uartPortId_t)n2, v_name) < 0) {
+      send_status_page(conn, 0, "Cannot add slave (duplicate address, duplicate name, or full table)");
       return;
     }
 
@@ -1480,6 +2068,101 @@ void app_config_http_handle_save(struct netconn *conn, const char *request, unsi
 
     send_status_page(conn, 1, "Register added and saved");
 
+    return;
+  }
+
+  if (strcmp(action, "update_alarm_thresholds") == 0) {
+    char v_slave[8];
+    char v_addr[10];
+    char v_enabled[8];
+    char v_threshold[24];
+    float alarm_threshold;
+    registerConfig_t *registerConfig;
+
+    if ((!get_param(body, "alarm_slave_index", v_slave, sizeof(v_slave))) ||
+        (!get_param(body, "alarm_reg_address", v_addr, sizeof(v_addr))) ||
+        (!get_param(body, "alarm_enabled", v_enabled, sizeof(v_enabled))) ||
+        (!get_param(body, "alarm_threshold", v_threshold, sizeof(v_threshold)))) {
+      send_status_page(conn, 0, "Alarm fields are missing");
+      return;
+    }
+
+    if ((!parse_ulong(v_slave, &n1)) || (!parse_ulong(v_addr, &n2)) || (!parse_ulong(v_enabled, &n3)) ||
+        (!parse_float_value(v_threshold, &alarm_threshold))) {
+      send_status_page(conn, 0, "Alarm fields are invalid numbers");
+      return;
+    }
+
+    if ((n1 >= (unsigned long)MAX_SLAVES) || (n3 > 1ul) || (alarm_threshold < 0.0f)) {
+      send_status_page(conn, 0, "Alarm values are out of range");
+      return;
+    }
+
+    registerConfig = find_register_config((uint8_t)n1, (uint16_t)n2);
+    if (registerConfig == 0) {
+      send_status_page(conn, 0, "Register not found");
+      return;
+    }
+
+    registerConfig->alarmEnabled = (uint8_t)n3;
+    registerConfig->alarmThreshold = alarm_threshold;
+    registerConfig->alarmActive = 0u;
+
+    if (appConfig_save() < 0) {
+      send_status_page(conn, 0, "Save failed after alarm update");
+      return;
+    }
+
+    send_status_page(conn, 1, "Alarm threshold updated and saved");
+    return;
+  }
+
+  if (strcmp(action, "update_alarm_thresholds_all") == 0) {
+    uint8_t i;
+    uint8_t j;
+    uint8_t updated_count = 0u;
+    char v_enabled[8];
+    char v_threshold[24];
+    float alarm_threshold;
+    registerConfig_t *registerConfig;
+
+    for (i = 0; i < MAX_SLAVES; i++) {
+      if (appDb.slaveConfig[i].used == 1u) {
+        for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
+          registerConfig = &appDb.slaveConfig[i].registerConfig[j];
+          if (registerConfig->used == 1u) {
+            if ((!get_indexed_param(body, "alarm_enabled", (unsigned long)i, (unsigned long)j, v_enabled, sizeof(v_enabled))) ||
+                (!get_indexed_param(body, "alarm_threshold", (unsigned long)i, (unsigned long)j, v_threshold, sizeof(v_threshold))) ||
+                (!parse_ulong(v_enabled, &n1)) || (!parse_float_value(v_threshold, &alarm_threshold))) {
+              send_status_page(conn, 0, "One or more threshold fields are invalid");
+              return;
+            }
+
+            if ((n1 > 1ul) || (alarm_threshold < 0.0f)) {
+              send_status_page(conn, 0, "One or more threshold values are out of range");
+              return;
+            }
+
+            registerConfig->alarmEnabled = (uint8_t)n1;
+            registerConfig->alarmThreshold = alarm_threshold;
+            registerConfig->alarmActive = 0u;
+            updated_count++;
+          }
+        }
+      }
+    }
+
+    if (updated_count == 0u) {
+      send_status_page(conn, 0, "No thresholds to update");
+      return;
+    }
+
+    if (appConfig_save() < 0) {
+      send_status_page(conn, 0, "Save failed after threshold update");
+      return;
+    }
+
+    send_status_page(conn, 1, "All thresholds updated and saved");
     return;
   }
 

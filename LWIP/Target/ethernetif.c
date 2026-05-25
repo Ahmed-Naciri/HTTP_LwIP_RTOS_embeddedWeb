@@ -146,7 +146,7 @@ void HAL_ETH_RxCpltCallback(ETH_HandleTypeDef *handlerEth)
 {
   osSemaphoreRelease(RxPktSemaphore);
 }
-/**
+/** 
   * @brief  Ethernet Tx Transfer completed callback
   * @param  handlerEth: ETH handler
   * @retval None
@@ -355,7 +355,7 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
   osStatus_t tx_wait_status;
   struct pbuf *q = NULL;
   err_t errval = ERR_OK;
-  ETH_BufferTypeDef Txbuffer[ETH_TX_DESC_CNT] = {0};
+  ETH_BufferTypeDef Txbuffer[ETH_TX_DESC_CNT] = {0};//table of descriptors that point to the pbuf payloads, this is passed to the HAL ETH Transmit function, which will use it to send the data in the pbufs. The number of descriptors must be at least the number of pbufs in a chain, and they must be contiguous in memory. The default count is 4, but can be increased in ETH GUI (Tx Descriptor Length) if you have many chained pbufs or large buffers that require more than 4 descriptors to transmit.
 
   memset(Txbuffer, 0 , ETH_TX_DESC_CNT*sizeof(ETH_BufferTypeDef));
 

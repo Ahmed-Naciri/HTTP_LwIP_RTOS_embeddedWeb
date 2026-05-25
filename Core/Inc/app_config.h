@@ -11,6 +11,7 @@
 #define MAX_UART_PORTS 1
 #define MAX_SLAVES 8
 #define MAX_REGISTERS_PER_SLAVE 16
+#define MAX_SLAVE_NAME_LEN 24
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -59,6 +60,9 @@ typedef struct
 	registerType_t registerType;
 	float lastValue;
 	uint8_t valid;
+	uint8_t alarmEnabled;
+	float alarmThreshold;
+	uint8_t alarmActive;
 
 }registerConfig_t;
 
@@ -68,6 +72,7 @@ typedef struct
 typedef struct
 {
 	uint8_t used;       //Indicates whether this entry is used
+	char slaveName[MAX_SLAVE_NAME_LEN];
 	uint8_t slaveAddress; //between 1..247
 	uartPortId_t portId;
 	uint16_t registerCount; //Number of registers currently configured for this slave
@@ -90,7 +95,7 @@ bool appConfig_isValid(const appDataBase_t* db);
 void appConfig_load(void);
 int appConfig_save(void);
 
-int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId);
+int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId, const char *slaveName);
 int appConfig_removeSlave(uint8_t slaveIndex);
 
 int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t registerType);

@@ -6,6 +6,9 @@
  */
 #include "app_config.h"
 
+#include <stdio.h>
+#include <string.h>
+
 /* The master must be reset when the UART changes. */
 #include "modbus_rtu_master.h"
 /* The UART layer applies the real hardware settings and can roll them back. */
@@ -14,6 +17,38 @@
 
 
 appDataBase_t appDb;
+
+static void appConfig_setSlaveName(slaveConfig_t *slave, uint8_t fallbackIndex)
+{
+	if (slave == 0) {
+		return;
+	}
+
+	if ((memchr(slave->slaveName, '\0', MAX_SLAVE_NAME_LEN) == 0) ||
+		(slave->slaveName[0] == '\0') || (slave->slaveName[0] == '\xff')) {
+		memset(slave->slaveName, 0, MAX_SLAVE_NAME_LEN);
+		(void)snprintf(slave->slaveName, MAX_SLAVE_NAME_LEN, "Slave %u", (unsigned int)(fallbackIndex + 1u));
+	}
+}
+
+static int appConfig_isSlaveNameUnique(const appDataBase_t *db, const char *name, uint8_t selfIndex)
+{
+	uint8_t i;
+
+	if ((db == 0) || (name == 0) || (name[0] == '\0')) {
+		return 0;
+	}
+
+	for (i = 0; i < MAX_SLAVES; i++) {
+		if ((i != selfIndex) && (db->slaveConfig[i].used == 1u) &&
+			(memchr(db->slaveConfig[i].slaveName, '\0', MAX_SLAVE_NAME_LEN) != 0) &&
+			(strcmp(db->slaveConfig[i].slaveName, name) == 0)) {
+			return 0;
+		}
+	}
+
+	return 1;
+}
 
 void appConfig_setDefaults(appDataBase_t* db)
 {
@@ -36,6 +71,7 @@ void appConfig_setDefaults(appDataBase_t* db)
 	for(i = 0; i < MAX_SLAVES ; i++)
 	{
 		db->slaveConfig[i].used = 0;
+		memset(db->slaveConfig[i].slaveName, 0, sizeof(db->slaveConfig[i].slaveName));
 		db->slaveConfig[i].slaveAddress = 0;
 		db->slaveConfig[i].portId = USART_PORT_3;
 		db->slaveConfig[i].registerCount = 0;
@@ -47,6 +83,9 @@ void appConfig_setDefaults(appDataBase_t* db)
 		db->slaveConfig[i].registerConfig[j].registerType = REG_TYPE_U16;
 		db->slaveConfig[i].registerConfig[j].lastValue = 0;
 		db->slaveConfig[i].registerConfig[j].valid = 0;
+		db->slaveConfig[i].registerConfig[j].alarmEnabled = 0;
+		db->slaveConfig[i].registerConfig[j].alarmThreshold = 0.0f;
+		db->slaveConfig[i].registerConfig[j].alarmActive = 0;
 
 	  }
 
@@ -100,12 +139,23 @@ bool appConfig_isValid(const appDataBase_t* db)
 
 		if (db->slaveConfig[i].used == 1u)
 		{
+			if ((memchr(db->slaveConfig[i].slaveName, '\0', MAX_SLAVE_NAME_LEN) == 0) ||
+				(db->slaveConfig[i].slaveName[0] == '\0'))
+			{
+				return false;
+			}
+
 			if ((db->slaveConfig[i].slaveAddress == 0u) || (db->slaveConfig[i].slaveAddress > 247u))
 			{
 				return false;
 			}
 
 			if ((uint32_t)db->slaveConfig[i].portId >= (uint32_t)MAX_UART_PORTS)
+			{
+				return false;
+			}
+
+			if (!appConfig_isSlaveNameUnique(db, db->slaveConfig[i].slaveName, i))
 			{
 				return false;
 			}
@@ -127,6 +177,18 @@ bool appConfig_isValid(const appDataBase_t* db)
 				}
 
 				if ((uint32_t)db->slaveConfig[i].registerConfig[j].registerType > (uint32_t)REG_TYPE_FLOAT)
+				{
+					return false;
+				}
+
+				if ((db->slaveConfig[i].registerConfig[j].alarmEnabled > 1u) ||
+					(db->slaveConfig[i].registerConfig[j].alarmActive > 1u))
+				{
+					return false;
+				}
+
+				if ((db->slaveConfig[i].registerConfig[j].alarmEnabled == 1u) &&
+					(db->slaveConfig[i].registerConfig[j].alarmThreshold < 0.0f))
 				{
 					return false;
 				}
@@ -174,6 +236,11 @@ void appConfig_load(void)
 	}
 
 	appDb = loaded;
+	for (uint8_t i = 0; i < MAX_SLAVES; i++) {
+		if (appDb.slaveConfig[i].used == 1u) {
+			appConfig_setSlaveName(&appDb.slaveConfig[i], i);
+		}
+	}
 	/* Re-apply the saved UART settings so the hardware matches RAM after boot. */
 	if (MAX_UART_PORTS > 0u)
 	{
@@ -206,9 +273,11 @@ int appConfig_save(void)
 
 }
 
-int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId)
+int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId, const char *slaveName)
 {
 	uint8_t i;
+	const char *name = slaveName;
+	char defaultName[MAX_SLAVE_NAME_LEN];
 	if((slaveAddress == 0u) || (slaveAddress > 247u))
 	{
 		return -1; // invalid address
@@ -228,7 +297,18 @@ int appConfig_addSlave(uint8_t slaveAddress,uartPortId_t portId)
 	{
 		if(appDb.slaveConfig[i].used == 0)
 		{
+			if ((name == 0) || (name[0] == '\0')) {
+				(void)snprintf(defaultName, sizeof(defaultName), "Slave %u", (unsigned int)(slaveAddress));
+				name = defaultName;
+			}
+
+			if (!appConfig_isSlaveNameUnique(&appDb, name, MAX_SLAVES))
+			{
+				return -4; // duplicate name
+			}
+
 			appDb.slaveConfig[i].used = 1;
+			(void)snprintf(appDb.slaveConfig[i].slaveName, MAX_SLAVE_NAME_LEN, "%s", name);
 			appDb.slaveConfig[i].slaveAddress = slaveAddress;
 			appDb.slaveConfig[i].portId = portId;
 			appDb.slaveConfig[i].registerCount = 0;//slave has 0 register in the moment of its creation
@@ -282,6 +362,9 @@ int appConfig_addRegister(uint8_t slaveIndex, uint16_t regAddress,registerType_t
 			slave->registerConfig[i].registerType = registerType;
 			slave->registerConfig[i].lastValue = 0.0f;
 			slave->registerConfig[i].valid = 0;
+				slave->registerConfig[i].alarmEnabled = 0;
+				slave->registerConfig[i].alarmThreshold = 0.0f;
+				slave->registerConfig[i].alarmActive = 0;
 			slave->registerCount++;
 			return i; // return the register index if the creation success
 		}
@@ -317,6 +400,7 @@ int appConfig_removeSlave(uint8_t slaveIndex)
 	}
 
 	slave->used = 0u;
+		memset(slave->slaveName, 0, sizeof(slave->slaveName));
 	slave->slaveAddress = 0u;
 	slave->portId = USART_PORT_3;
 	slave->registerCount = 0u;
@@ -350,6 +434,9 @@ int appConfig_removeRegister(uint8_t slaveIndex, uint16_t regAddress)
 			slave->registerConfig[i].registerType = REG_TYPE_U16;
 			slave->registerConfig[i].lastValue = 0.0f;
 			slave->registerConfig[i].valid = 0u;
+			slave->registerConfig[i].alarmEnabled = 0u;
+			slave->registerConfig[i].alarmThreshold = 0.0f;
+			slave->registerConfig[i].alarmActive = 0u;
 
 			if (slave->registerCount > 0u)
 			{

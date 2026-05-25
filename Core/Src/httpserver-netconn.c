@@ -188,6 +188,10 @@ static void http_server_serve(struct netconn *conn)
         {
           app_config_http_send_values(conn);
         }
+        else if (strncmp(g_http_request_buffer, "GET /api/modbus_values", 22) == 0)
+        {
+          app_config_http_send_api_values(conn);
+        }
         else if ((strncmp(g_http_request_buffer, "GET /test ", 10) == 0) ||
                  (strncmp(g_http_request_buffer, "GET / ", 6) == 0))
         {

@@ -17,4 +17,7 @@ void app_config_http_handle_save(struct netconn *conn, const char *request, unsi
 /* Values display page */
 void app_config_http_send_values(struct netconn *conn);
 
+/* JSON endpoint for live values */
+void app_config_http_send_api_values(struct netconn *conn);
+
 #endif
