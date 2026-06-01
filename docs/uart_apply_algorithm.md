@@ -1,4 +1,4 @@
-# Algorithme — Appliquer configuration UART (safe)
+<!-- # Algorithme — Appliquer configuration UART (safe)
 
 But : appliquer une nouvelle configuration série depuis l'interface web, l'appliquer réellement sur le hardware, la persister et garantir rollback en cas d'erreur.
 
@@ -130,4 +130,4 @@ flowchart TD
 
 ---
 
-Fichier créé : `docs/uart_apply_algorithm.md`. Traduits cela directement en C en suivant l'algorithme ci‑dessus ; si tu veux, envoie ton code et je corrige la syntaxe et les appels HAL spécifiquement.
+Fichier créé : `docs/uart_apply_algorithm.md`. Traduits cela directement en C en suivant l'algorithme ci‑dessus ; si tu veux, envoie ton code et je corrige la syntaxe et les appels HAL spécifiquement. -->

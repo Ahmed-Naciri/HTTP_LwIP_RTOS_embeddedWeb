@@ -1,4 +1,4 @@
-# STM32 Web and Network Debug Postmortem (Last 2 Days)
+<!-- # STM32 Web and Network Debug Postmortem (Last 2 Days)
 
 ## Objective
 Build a stable web page on STM32 that lets you:
@@ -1088,4 +1088,4 @@ Why: Ensures new sources are compiled and linked.
 
 <div style="padding:12px 14px;border-left:6px solid #1d4ed8;background:#edf4ff;margin-top:14px;">
 <strong>Result:</strong> This set of changes addresses layered failures across startup order, parsing robustness, stack sizing, PHY behavior, and flash mapping.
-</div>
+</div> -->

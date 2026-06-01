@@ -1,4 +1,4 @@
-# Explication technique du flux de configuration
+<!-- # Explication technique du flux de configuration
 
 ## Objectif
 
@@ -718,4 +718,4 @@ Les documents doivent montrer clairement :
 - les problemes observes,
 - et la solution retenue pour chaque probleme.
 
-En pratique, cela permet de reprendre le projet plus tard sans devoir refaire toute l'analyse depuis le debut.
+En pratique, cela permet de reprendre le projet plus tard sans devoir refaire toute l'analyse depuis le debut. -->
