@@ -1,0 +1,507 @@
+rapport :
+
+Pour ton sujet, je suivrais ce plan :
+
+Pages préliminaires
+Page de garde
+Remerciements
+Résumé en français
+Abstract en anglais
+ملخص باللغة العربية
+Mots-clés
+Table des matières
+Liste des figures
+Liste des tableaux
+Liste des acronymes
+Introduction Générale
+Contexte général du stage
+Présentation succincte de Meier Energy
+Présentation générale du sujet
+Organisation du rapport
+
+Chapitre 1 : Contexte Général du Projet
+Introduction
+1. Présentation de l'entreprise
+1.1 Présentation générale
+1.2 Historique
+1.3 Organisation de l'entreprise
+1.4 Activités et domaines d'intervention
+1.5 Fiche signalétique
+2. Présentation du projet
+2.1 Contexte du projet
+2.2 Problématique du projet
+2.3 Objectifs du projet
+3. Méthodologie de travail
+3.1 Conduite du projet
+3.2 Planification du projet
+3.3 Chronogramme du stage
+Conclusion
+
+Chapitre 2 : Analyse et Spécification
+Introduction
+1. Étude de l'existant
+1.1 Solutions existantes
+1.2 Analyse critique de l'existant
+2. Cahier des charges
+2.1 Besoins métier
+2.2 Contraintes du projet
+3. Analyse des besoins
+3.1 Besoins fonctionnels
+Configuration réseau
+Gestion des slaves
+Gestion des registres
+Visualisation des valeurs Modbus
+Sauvegarde des paramètres
+3.2 Besoins non fonctionnels
+Performance
+Fiabilité
+Temps réel
+Consommation mémoire
+Maintenabilité
+4. Étude des solutions possibles
+4.1 Solution basée sur un terminal série
+4.2 Solution basée sur une application PC
+4.3 Solution basée sur un serveur Web embarqué
+5. Comparaison et choix de la solution
+5.1 Critères de comparaison
+5.2 Justification du choix retenu
+Conclusion
+
+Chapitre 3 : Étude Technique et Conception
+Introduction
+1. Présentation des technologies utilisées
+1.1 STM32
+1.2 FreeRTOS
+1.3 LwIP
+1.4 Modbus RTU
+1.5 RS485
+2. Architecture matérielle du système
+3. Architecture logicielle du système
+4. Conception globale
+4.1 Architecture générale
+4.2 Diagramme de cas d'utilisation
+4.3 Diagrammes de séquence
+4.4 Diagrammes d'architecture
+5. Organisation des modules logiciels
+5.1 Module HTTP
+5.2 Module Modbus
+5.3 Module Configuration
+5.4 Module Polling
+Conclusion
+
+Chapitre 4 : Réalisation et Implémentation
+Introduction
+1. Environnement de développement
+1.1 Environnement matériel
+1.2 Environnement logiciel
+2. Développement de la solution
+2.1 Serveur HTTP embarqué
+2.2 Gestion des requêtes GET et POST
+2.3 Interface Web de configuration
+2.4 Configuration réseau
+2.5 Communication Modbus RTU
+2.6 Gestion des slaves
+2.7 Gestion des registres
+2.8 Persistance des paramètres
+2.9 Gestion des tâches FreeRTOS
+2.10 Optimisation mémoire et performances
+3. Algorithmes principaux
+3.1 Traitement des requêtes HTTP
+3.2 Polling Modbus
+3.3 Génération des pages Web
+3.4 Sauvegarde des paramètres
+4. Tests et validation
+4.1 Tests fonctionnels
+4.2 Tests réseau
+4.3 Tests Modbus
+4.4 Validation de l'interface Web
+5. Résultats obtenus
+6. Limites rencontrées
+7. Travail réalisé et état actuel du projet
+8. Perspectives techniques
+Conclusion
+Conclusion Générale
+Bilan du travail réalisé
+Apports personnels
+Compétences acquises
+Perspectives futures
+Bibliographie
+Annexes
+Annexe A : Diagrammes UML
+Annexe B : Captures d'écran
+Annexe C : Extraits de code
+Annexe D : Structures de données
+Annexe E : Tableaux Modbus
+Annexe F : Chronogramme détaillé
+
+Je trouve cette version plus cohérente avec :
+
+les consignes de ton école ;
+ton ancien rapport ;
+un projet de systèmes embarqués STM32/LwIP/FreeRTOS ;
+un rapport de 50 à 70 pages sans répétitions inutiles.
+
+
+chapitre 1 :
+
+2. Présentation du projet
+
+
+### 2.2 Problématique du projet
+
+ Dans une infrastructure hospitalière, la disponibilité des équipements techniques constitue un enjeu critique. Le bon fonctionnement des tableaux électriques, des onduleurs, des groupes électrogènes, des systèmes de climatisation, des compteurs d’énergie, des automates de supervision et de certains équipements techniques connectés conditionne la continuité des services de soins. La surveillance de ces installations nécessite donc la collecte régulière de données techniques telles que les états de fonctionnement, les alarmes, les mesures électriques ou les informations de diagnostic. 
+
+Dans la pratique, une partie de ces équipements communique à travers des protocoles industriels standard tels que Modbus RTU sur RS485. Par exemple, de nombreux compteurs d’énergie, variateurs, automates, contrôleurs de ventilation ou interfaces techniques de bâtiments utilisent ce type de communication pour remonter leurs registres de mesure et leurs états. L’exploitation de ces données reste cependant difficile lorsque les outils disponibles sont limités à un terminal série, à un logiciel PC propriétaire ou à une supervision plus lourde de type GTB/SCADA. Ces solutions permettent bien d’accéder aux données, mais elles sont souvent peu intuitives, nécessitent un poste informatique dédié, ou demandent une expertise technique plus élevée pour la configuration et la maintenance. 
+
+Dans un environnement hospitalier, cette complexité devient un frein opérationnel. Une simple modification de paramètres de communication, l’ajout d’un nouvel équipement ou la consultation d’une alarme peut exiger plusieurs manipulations techniques et des outils différents selon les matériels installés. Cela augmente le temps d’intervention et rend la maintenance moins fluide, surtout lorsqu’il faut intervenir rapidement sur des équipements critiques. 
+
+Par ailleurs, les systèmes embarqués destinés à ce type d’usage disposent de ressources limitées en mémoire, en puissance de calcul et en capacité réseau. Il est donc nécessaire de concevoir une solution légère, robuste et accessible, capable d’assurer à la fois la configuration des équipements, la supervision des valeurs de terrain et la persistance des paramètres de communication, tout en restant compatible avec les contraintes d’un système embarqué.
+
+La problématique de ce projet consiste donc à concevoir une plateforme embarquée capable d’assurer la configuration, la supervision et la visualisation des données provenant d’équipements techniques communicants, à travers une interface Web simple d’utilisation, tout en respectant les contraintes matérielles d’un système embarqué basé sur un microcontrôleur STM32. La solution devra également permettre la surveillance des valeurs collectées et la signalisation des situations anormales à l’aide d’un mécanisme d’alarmes configurable basé sur des seuils définis par l’utilisateur.
+
+### 2.3 Objectifs du projet
+
+L’objectif principal de ce projet est de concevoir et développer une plateforme embarquée de supervision énergétique permettant de faciliter la configuration, la surveillance et l’exploitation des équipements techniques communicants au sein des infrastructures hospitalières.
+
+Pour atteindre cet objectif, plusieurs objectifs spécifiques ont été définis :
+
+* Concevoir une architecture embarquée basée sur un microcontrôleur STM32 capable d’assurer les fonctions de communication, de supervision et de configuration.
+* Mettre en œuvre une interface Web embarquée accessible à partir d’un navigateur afin de simplifier l’accès aux fonctionnalités du système.
+* Permettre la configuration des paramètres réseau de la plateforme sans recourir à des outils externes spécialisés.
+* Intégrer la communication Modbus RTU sur liaison RS485 afin d’assurer l’échange de données avec les équipements supervisés.
+* Développer un mécanisme de gestion des équipements esclaves permettant leur ajout, leur modification et leur suppression depuis l’interface de configuration.
+* Permettre la sélection et la configuration des registres Modbus à superviser en fonction des besoins de l’utilisateur.
+* Assurer l’acquisition périodique des données provenant des équipements connectés et leur mise à disposition à travers une interface de visualisation.
+* Mettre en place un système de supervision permettant l’affichage en temps réel des valeurs collectées.
+* Développer un mécanisme d’alarmes basé sur des seuils configurables associés aux registres supervisés afin de détecter automatiquement les situations anormales.
+* Fournir à l’utilisateur une indication visuelle des alarmes déclenchées afin de faciliter l’identification rapide des anomalies.
+* Assurer la persistance des paramètres de configuration afin de garantir leur conservation après redémarrage du système.
+* Optimiser l’utilisation des ressources mémoire et processeur afin de garantir un fonctionnement fiable sur une plateforme embarquée à ressources limitées.
+
+À travers ces objectifs, le projet vise à fournir une solution légère, flexible et facilement déployable permettant de simplifier la supervision énergétique et le suivi des équipements techniques tout en améliorant la réactivité face aux anomalies détectées.
+
+### 3. Méthodologie de travail
+
+#### 3.1 Conduite du projet
+
+La réalisation de ce projet a été menée suivant une démarche inspirée de la méthode en V, largement utilisée dans le développement des systèmes embarqués et des systèmes industriels. Cette méthodologie permet d'assurer une progression structurée du projet tout en garantissant la cohérence entre les besoins identifiés, la conception de la solution, son implémentation et sa validation.
+
+La première étape a consisté à analyser le besoin exprimé et à identifier les fonctionnalités attendues de la plateforme de supervision énergétique. Cette phase a permis de définir le périmètre du projet ainsi que les contraintes techniques liées à l'utilisation d'un système embarqué.
+
+Une phase de conception a ensuite été réalisée afin de définir l'architecture matérielle et logicielle de la solution, les modules fonctionnels à développer ainsi que les mécanismes de communication entre les différents composants du système.
+
+La phase de développement a porté sur l'implémentation progressive des fonctionnalités retenues, notamment la communication Modbus RTU, le serveur Web embarqué, la gestion des équipements supervisés, la configuration réseau, la supervision des registres et le mécanisme de gestion des alarmes.
+
+Enfin, plusieurs niveaux de tests ont été effectués afin de vérifier le bon fonctionnement des différents modules développés, de valider leur intégration et de s'assurer de la conformité de la solution avec les objectifs définis au début du projet.
+
+L'application de cette démarche a permis de structurer efficacement le développement tout en facilitant la détection et la correction des anomalies tout au long du cycle de réalisation.
+
+#### 3.2 Planification du projet
+La planification d’un projet joue un rôle essentiel dans sa gestion efficace. Elle implique
+la définition des tâches à réaliser, des objectifs à atteindre, des ressources à maîtriser, et des
+activités à suivre. Dans le cadre de notre projet, nous avons choisi d’utiliser un diagramme
+de Gantt pour ordon nancer et visualiser les différentes tâches à exécuter tout au long de
+sa réalisation. Le diagramme de Gantt nous permet de planifier les activités, d’identifier
+les dépendances entre les tâches et de suivre l’avancement du projet de manière claire et
+organisée. La figure ci-dessous représente le diagramme de Gantt de notre projet:
+(diagramme de Gantt)
+
+
+Chapitre 2 : Analyse et Spécification
+
+## Introduction
+
+Avant de concevoir la solution proposée, il est nécessaire d'étudier les méthodes et outils existants utilisés pour la supervision et la configuration des équipements techniques communicants. Cette étude permet d'identifier les limites des solutions actuelles et de justifier les choix retenus dans le cadre du projet.
+
+### 1. Étude de l'existant
+
+#### 1.1 Solutions existantes
+
+Plusieurs solutions permettent aujourd'hui de superviser des équipements communiquant via Modbus RTU :
+
+* Les logiciels de supervision industriels (SCADA, GTB, GTC).
+* Les logiciels propriétaires fournis par les fabricants d'équipements.
+* Les terminaux de communication série permettant l'accès direct aux registres Modbus.
+* Les passerelles industrielles associées à des applications de supervision centralisées.
+
+Ces solutions permettent généralement la configuration des équipements, la consultation des données de mesure ainsi que la surveillance de certains paramètres techniques.
+
+#### 1.2 Analyse critique de l'existant
+
+Malgré leurs fonctionnalités avancées, les solutions existantes présentent plusieurs limitations :
+
+* Coût élevé des logiciels de supervision industriels.
+* Dépendance à un ordinateur ou à un serveur dédié.
+* Interfaces parfois complexes pour les utilisateurs non spécialisés.
+* Difficulté d'intégration d'équipements de fabricants différents.
+* Faible flexibilité pour les applications embarquées à ressources limitées.
+* Nécessité d'installer des logiciels spécifiques sur les postes clients.
+
+Dans le contexte des infrastructures hospitalières, ces contraintes peuvent compliquer les opérations de configuration, de supervision et de maintenance des équipements techniques.
+
+Afin de répondre à ces limitations, ce projet propose une plateforme embarquée basée sur un microcontrôleur STM32 intégrant un serveur Web permettant la configuration, la supervision des données et la gestion des alarmes à travers une interface accessible depuis un simple navigateur Web.
+
+
+### 2. Cahier des charges
+
+#### 2.1 Besoins métier
+
+Dans le cadre de la supervision énergétique des infrastructures hospitalières, les équipes techniques doivent disposer d'un moyen simple et efficace pour surveiller les équipements communicants, consulter leurs données de fonctionnement et détecter rapidement les situations anormales.
+
+La solution à développer doit permettre :
+
+* La configuration des paramètres réseau de la plateforme.
+* La gestion des équipements supervisés à travers une interface centralisée.
+* L'ajout et la suppression des équipements communicants.
+* La configuration des registres à surveiller pour chaque équipement.
+* La collecte périodique des données provenant des équipements connectés.
+* L'affichage des valeurs supervisées à travers une interface Web accessible depuis un navigateur.
+* La consultation de l'état des équipements et des paramètres surveillés.
+* La définition de seuils d'alarme associés aux valeurs supervisées.
+* La détection automatique des dépassements de seuils.
+* L'affichage des alarmes actives afin de faciliter les opérations de surveillance et de maintenance.
+* La conservation des paramètres de configuration après redémarrage du système.
+
+L'objectif est de fournir une plateforme de supervision légère, accessible et facile à utiliser permettant d'améliorer le suivi des équipements techniques et énergétiques.
+
+#### 2.2 Contraintes du projet
+
+Le développement de la plateforme doit prendre en compte plusieurs contraintes techniques et opérationnelles.
+
+##### Contraintes matérielles
+
+* Utilisation d'un microcontrôleur STM32 disposant de ressources limitées en mémoire et en puissance de calcul.
+* Utilisation d'une interface RS485 pour la communication Modbus RTU.
+* Utilisation d'une interface Ethernet pour l'accès à l'interface Web.
+* Fonctionnement sur une plateforme embarquée sans système d'exploitation généraliste.
+
+##### Contraintes logicielles
+
+* Utilisation du système d'exploitation temps réel FreeRTOS.
+* Utilisation de la pile réseau LwIP pour la gestion des communications Ethernet.
+* Respect du protocole Modbus RTU pour les échanges avec les équipements supervisés.
+* Gestion simultanée des tâches de communication, de supervision et d'affichage Web.
+
+##### Contraintes fonctionnelles
+
+* Assurer une supervision fiable des données collectées.
+* Garantir la cohérence des paramètres configurés par l'utilisateur.
+* Fournir une interface Web simple et intuitive.
+* Permettre l'ajout de nouveaux équipements sans modification majeure du système.
+* Assurer la détection rapide des alarmes configurées.
+
+##### Contraintes de performance
+
+* Limiter l'utilisation de la mémoire disponible.
+* Réduire les temps de réponse de l'interface Web.
+* Garantir la stabilité du système lors de la supervision de plusieurs équipements et registres.
+* Assurer un fonctionnement continu et fiable dans un environnement industriel ou hospitalier.
+
+
+### 3. Analyse des besoins
+
+#### 3.1 Besoins fonctionnels
+
+Les besoins fonctionnels représentent les services que la plateforme doit fournir afin de répondre aux objectifs du projet.
+
+##### Configuration réseau
+
+Le système doit permettre la consultation et la modification des paramètres réseau de la plateforme, notamment l'adresse IP, le masque de sous-réseau, la passerelle et les paramètres nécessaires à la communication Ethernet.
+
+##### Gestion des équipements supervisés (Slaves)
+
+Le système doit permettre la gestion des équipements Modbus RTU connectés à la plateforme. L'utilisateur doit pouvoir ajouter ou supprimer un équipement, définir son adresse Modbus et configurer les paramètres nécessaires à son identification sur le réseau RS485.
+
+##### Gestion des registres
+
+Le système doit permettre la configuration des registres Modbus à superviser pour chaque équipement. Pour chaque registre, l'utilisateur doit pouvoir définir les informations nécessaires à son acquisition ainsi que les paramètres associés à son affichage et à sa surveillance.
+
+##### Supervision et visualisation des données
+
+Le système doit assurer l'acquisition périodique des données provenant des équipements connectés et permettre leur visualisation à travers une interface Web. Les valeurs collectées doivent être présentées de manière claire afin de faciliter le suivi des équipements supervisés.
+
+##### Gestion des alarmes
+
+Le système doit permettre l'association d'un seuil d'alarme à chaque registre supervisé. Lorsqu'une valeur dépasse le seuil configuré, une alarme doit être déclenchée et signalée visuellement à l'utilisateur à travers l'interface de supervision.
+
+##### Sauvegarde des paramètres
+
+Le système doit conserver les paramètres de configuration afin d'éviter leur perte lors d'un redémarrage ou d'une coupure d'alimentation.
+
+---
+
+#### 3.2 Besoins non fonctionnels
+
+Les besoins non fonctionnels définissent les contraintes de qualité auxquelles la solution doit répondre.
+
+##### Performance
+
+L'interface Web doit offrir un temps de réponse acceptable lors de la consultation des données, de la configuration des équipements et de l'affichage des valeurs supervisées.
+
+##### Fiabilité
+
+Le système doit assurer un fonctionnement stable et continu, même lors de l'acquisition simultanée de plusieurs registres ou équipements.
+
+##### Temps réel
+
+L'acquisition des données doit être effectuée de manière périodique afin de fournir des informations actualisées et représentatives de l'état réel des équipements supervisés.
+
+##### Consommation des ressources
+
+La solution doit optimiser l'utilisation de la mémoire et du processeur afin de rester compatible avec les ressources limitées du microcontrôleur STM32.
+
+##### Maintenabilité
+
+L'architecture logicielle doit être modulaire afin de faciliter les opérations de maintenance, de correction et d'évolution du système.
+
+##### Facilité d'utilisation
+
+L'interface utilisateur doit être simple, intuitive et accessible depuis un navigateur Web sans nécessiter l'installation de logiciels supplémentaires.
+
+##### Évolutivité
+
+Le système doit permettre l'ajout de nouveaux équipements et de nouveaux registres sans nécessiter une modification importante de l'architecture existante.
+
+
+### 4. Étude des solutions possibles
+
+Afin de répondre aux besoins de supervision, de configuration et de gestion des alarmes des équipements techniques communicants, plusieurs solutions ont été étudiées. L'objectif de cette étude est d'identifier l'approche la plus adaptée aux contraintes fonctionnelles et techniques du projet.
+
+#### 4.1 Solution basée sur un terminal série
+
+Cette première solution consiste à utiliser une liaison série entre l'équipement de supervision et un ordinateur. Les opérations de configuration et de consultation des données sont réalisées à travers un terminal série ou un logiciel de communication tel que PuTTY, Tera Term ou Hercules.
+
+Cette approche présente l'avantage d'être simple à mettre en œuvre et nécessite peu de ressources matérielles. Elle est fréquemment utilisée lors des phases de développement, de test ou de maintenance.
+
+Cependant, cette solution présente plusieurs limitations :
+
+* Interface utilisateur peu conviviale.
+* Nécessité de connaître les commandes disponibles.
+* Absence de visualisation graphique des données.
+* Difficulté de gestion d'un grand nombre d'équipements et de registres.
+* Faible ergonomie pour les utilisateurs non techniques.
+
+Par conséquent, cette solution n'est pas adaptée à une plateforme de supervision destinée à être utilisée quotidiennement par des équipes de maintenance ou d'exploitation.
+
+#### 4.2 Solution basée sur une application PC
+
+Cette solution consiste à développer une application dédiée exécutée sur un ordinateur. L'application assure la communication avec les équipements Modbus RTU, la visualisation des données, la configuration des paramètres et la gestion des alarmes.
+
+Cette approche offre plusieurs avantages :
+
+* Interface graphique plus évoluée.
+* Meilleure expérience utilisateur.
+* Possibilité d'intégrer des fonctionnalités avancées de supervision.
+* Gestion simplifiée des alarmes et des données.
+
+Néanmoins, cette solution présente certaines contraintes :
+
+* Nécessité d'installer et de maintenir l'application sur chaque poste utilisateur.
+* Dépendance à un ordinateur dédié.
+* Coût de maintenance plus élevé.
+* Difficulté de déploiement dans certains environnements industriels ou hospitaliers.
+* Faible portabilité entre différents systèmes d'exploitation.
+
+Bien qu'efficace, cette approche reste dépendante d'une infrastructure informatique supplémentaire.
+
+#### 4.3 Solution basée sur un serveur Web embarqué
+
+La troisième solution consiste à intégrer directement un serveur Web dans le système embarqué. Les fonctionnalités de configuration, de supervision et de gestion des alarmes sont accessibles à travers une interface Web consultable depuis un navigateur.
+
+Cette approche présente plusieurs avantages :
+
+* Aucun logiciel à installer sur les postes utilisateurs.
+* Accès à la plateforme depuis tout équipement disposant d'un navigateur Web.
+* Interface unique pour la configuration et la supervision.
+* Déploiement simplifié.
+* Réduction des coûts de maintenance.
+* Facilité d'accès aux données et aux alarmes.
+* Adaptation aux architectures réseau modernes.
+
+L'inconvénient principal de cette solution réside dans la complexité de son développement sur une plateforme embarquée disposant de ressources limitées. Elle nécessite notamment l'intégration d'une pile réseau, d'un serveur HTTP et d'une gestion optimisée de la mémoire.
+
+Malgré ces contraintes, cette solution répond le mieux aux besoins identifiés dans le cadre du projet et constitue l'approche la plus adaptée à la supervision énergétique des infrastructures hospitalières.
+
+
+### 5. Comparaison et choix de la solution
+
+#### 5.1 Critères de comparaison
+
+Afin de sélectionner la solution la plus adaptée aux besoins du projet, plusieurs critères ont été retenus :
+
+* **Facilité d'utilisation** : simplicité d'accès aux fonctionnalités de configuration et de supervision.
+* **Coût de déploiement** : ressources matérielles et logicielles nécessaires à la mise en œuvre de la solution.
+* **Accessibilité** : possibilité d'accéder au système depuis différents équipements.
+* **Maintenance** : facilité de mise à jour et d'administration de la solution.
+* **Évolutivité** : capacité à intégrer de nouvelles fonctionnalités ou de nouveaux équipements.
+* **Adaptation aux systèmes embarqués** : compatibilité avec les ressources limitées de la plateforme STM32.
+
+Le tableau suivant présente une comparaison des différentes solutions étudiées :
+
+| Critère                       | Terminal série | Application PC | Serveur Web embarqué |
+| ----------------------------- | -------------- | -------------- | -------------------- |
+| Facilité d'utilisation        | Faible         | Bonne          | Très bonne           |
+| Interface graphique           | Non            | Oui            | Oui                  |
+| Installation côté utilisateur | Non            | Oui            | Non                  |
+| Accessibilité                 | Limitée        | Moyenne        | Élevée               |
+| Maintenance                   | Moyenne        | Moyenne        | Faible               |
+| Évolutivité                   | Faible         | Bonne          | Très bonne           |
+| Adaptation au projet          | Moyenne        | Bonne          | Très bonne           |
+
+#### 5.2 Justification du choix retenu
+
+Après l'étude des différentes solutions, l'approche basée sur un serveur Web embarqué a été retenue.
+
+Cette solution permet d'accéder aux fonctionnalités de configuration, de supervision et de gestion des alarmes à travers un simple navigateur Web sans nécessiter l'installation d'un logiciel spécifique. Elle offre également une meilleure accessibilité puisque plusieurs utilisateurs peuvent consulter les informations du système à partir de différents équipements connectés au réseau.
+
+Par ailleurs, cette approche s'intègre naturellement à l'architecture du projet basée sur un microcontrôleur STM32, tout en permettant la mise en place d'une interface de supervision moderne et intuitive. Malgré les contraintes liées aux ressources limitées du système embarqué, l'utilisation de FreeRTOS et de la pile réseau LwIP permet d'assurer le fonctionnement du serveur Web tout en maintenant des performances compatibles avec les besoins du projet.
+
+Ainsi, le serveur Web embarqué constitue la solution la plus adaptée pour répondre aux exigences de supervision énergétique, de configuration des équipements communicants et de gestion des alarmes au sein des infrastructures hospitalières.
+
+### Conclusion
+
+L'analyse des besoins ainsi que l'étude des différentes solutions ont permis d'identifier les fonctionnalités attendues et de sélectionner l'approche la plus adaptée au contexte du projet. Le choix d'un serveur Web embarqué offre un compromis intéressant entre accessibilité, simplicité d'utilisation et compatibilité avec les contraintes d'un système embarqué.
+
+Le chapitre suivant sera consacré à l'étude technique et à la conception de la solution retenue, en présentant les technologies utilisées ainsi que l'architecture matérielle et logicielle de la plateforme développée.
+
+
+### 5. Comparaison et choix de la solution
+
+#### 5.1 Critères de comparaison
+
+Afin de sélectionner la solution la plus adaptée aux besoins du projet, plusieurs critères ont été retenus :
+
+* **Facilité d'utilisation** : simplicité d'accès aux fonctionnalités de configuration et de supervision.
+* **Coût de déploiement** : ressources matérielles et logicielles nécessaires à la mise en œuvre de la solution.
+* **Accessibilité** : possibilité d'accéder au système depuis différents équipements.
+* **Maintenance** : facilité de mise à jour et d'administration de la solution.
+* **Évolutivité** : capacité à intégrer de nouvelles fonctionnalités ou de nouveaux équipements.
+* **Adaptation aux systèmes embarqués** : compatibilité avec les ressources limitées de la plateforme STM32.
+
+Le tableau suivant présente une comparaison des différentes solutions étudiées :
+
+| Critère                       | Terminal série | Application PC | Serveur Web embarqué |
+| ----------------------------- | -------------- | -------------- | -------------------- |
+| Facilité d'utilisation        | Faible         | Bonne          | Très bonne           |
+| Interface graphique           | Non            | Oui            | Oui                  |
+| Installation côté utilisateur | Non            | Oui            | Non                  |
+| Accessibilité                 | Limitée        | Moyenne        | Élevée               |
+| Maintenance                   | Moyenne        | Moyenne        | Faible               |
+| Évolutivité                   | Faible         | Bonne          | Très bonne           |
+| Adaptation au projet          | Moyenne        | Bonne          | Très bonne           |
+
+#### 5.2 Justification du choix retenu
+
+Après l'étude des différentes solutions, l'approche basée sur un serveur Web embarqué a été retenue.
+
+Cette solution permet d'accéder aux fonctionnalités de configuration, de supervision et de gestion des alarmes à travers un simple navigateur Web sans nécessiter l'installation d'un logiciel spécifique. Elle offre également une meilleure accessibilité puisque plusieurs utilisateurs peuvent consulter les informations du système à partir de différents équipements connectés au réseau.
+
+Par ailleurs, cette approche s'intègre naturellement à l'architecture du projet basée sur un microcontrôleur STM32, tout en permettant la mise en place d'une interface de supervision moderne et intuitive. Malgré les contraintes liées aux ressources limitées du système embarqué, l'utilisation de FreeRTOS et de la pile réseau LwIP permet d'assurer le fonctionnement du serveur Web tout en maintenant des performances compatibles avec les besoins du projet.
+
+Ainsi, le serveur Web embarqué constitue la solution la plus adaptée pour répondre aux exigences de supervision énergétique, de configuration des équipements communicants et de gestion des alarmes au sein des infrastructures hospitalières.
+
+### Conclusion
+
+L'analyse des besoins ainsi que l'étude des différentes solutions ont permis d'identifier les fonctionnalités attendues et de sélectionner l'approche la plus adaptée au contexte du projet. Le choix d'un serveur Web embarqué offre un compromis intéressant entre accessibilité, simplicité d'utilisation et compatibilité avec les contraintes d'un système embarqué.
+
+Le chapitre suivant sera consacré à l'étude technique et à la conception de la solution retenue, en présentant les technologies utilisées ainsi que l'architecture matérielle et logicielle de la plateforme développée.
