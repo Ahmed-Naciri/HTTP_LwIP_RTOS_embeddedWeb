@@ -91,12 +91,34 @@ void pollingEngine_task(void)
 
  if(modbusState == MODBUS_MASTER_RESPONSE_READY)
  {
-	 if(modbusMaster_GetLastRegisterValue(&registerValue) == HAL_OK)
-	 {
-		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].lastValue = (float)registerValue;
-		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].valid = 1;
-		 pollingEngine_updateAlarmState(&appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex]);
-	 }
+	if(modbusMaster_GetLastRegisterValue(&registerValue) == HAL_OK)
+	{
+		registerConfig_t *reg = &appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex];
+
+		/* Interpret raw 16-bit value according to the register type. */
+		switch (reg->registerType)
+		{
+			case REG_TYPE_I16:
+				/* signed 16-bit */
+				reg->lastValue = (float)((int16_t)registerValue);
+				break;
+
+			case REG_TYPE_U16:
+			default:
+				/* unsigned 16-bit (default behavior) */
+				reg->lastValue = (float)registerValue;
+				break;
+		}
+
+		reg->valid = 1;
+		pollingEngine_updateAlarmState(reg);
+
+		/* Persist signed registers after a successful read so the last value survives reboot. */
+		if (reg->registerType == REG_TYPE_I16)
+		{
+			(void)appConfig_save();
+		}
+	}
 	 else
 	 {
 		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].valid = 0;

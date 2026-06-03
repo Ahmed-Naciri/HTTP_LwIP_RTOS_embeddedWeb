@@ -973,6 +973,10 @@ static void http_write_float(struct netconn *conn, float v)
     frac -= 1000u;
   }
 
+  if (neg) {
+    http_write(conn, "-");
+  }
+
   http_write_uint(conn, ip);
   http_write(conn, ".");
 

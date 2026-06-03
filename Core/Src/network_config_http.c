@@ -265,7 +265,6 @@ void network_config_http_send_form(struct netconn *conn)
   http_write(conn,
     "\" style=\"width:260px\"></label></p>"
     "<p style=\"display:flex;gap:12px;flex-wrap:wrap;\">"
-    "<button type=\"submit\">Save</button>"
     "<button type=\"submit\" name=\"reboot\" value=\"1\" style=\"background:#b00020;color:#fff;border:none;padding:8px 14px;border-radius:4px;cursor:pointer;\">Apply &amp; Reboot</button>"
     "</p>"
     "</form>"
