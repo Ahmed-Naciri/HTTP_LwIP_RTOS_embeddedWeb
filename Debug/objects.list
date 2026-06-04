@@ -3,6 +3,7 @@
 "./Core/Src/ee.o"
 "./Core/Src/freertos.o"
 "./Core/Src/fs.o"
+"./Core/Src/home.o"
 "./Core/Src/httpserver-netconn.o"
 "./Core/Src/main.o"
 "./Core/Src/modbus_rtu_master.o"

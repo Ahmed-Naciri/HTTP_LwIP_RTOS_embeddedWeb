@@ -20,6 +20,7 @@
 #include "httpserver-netconn.h"
 #include "app_config_http.h"
 #include "network_config_http.h"
+#include "home.h"
 #include "cmsis_os.h"
 
 #include <stdio.h>
@@ -192,10 +193,13 @@ static void http_server_serve(struct netconn *conn)
         {
           app_config_http_send_api_values(conn);
         }
-        else if ((strncmp(g_http_request_buffer, "GET /test ", 10) == 0) ||
-                 (strncmp(g_http_request_buffer, "GET / ", 6) == 0))
+        else if (strncmp(g_http_request_buffer, "GET /test ", 10) == 0)
         {
           netconn_write(conn, TEST_PAGE, strlen(TEST_PAGE), NETCONN_COPY);
+        }
+        else if (strncmp(g_http_request_buffer, "GET / ", 6) == 0)
+        {
+          home_send_page(conn);
         }
         
       }

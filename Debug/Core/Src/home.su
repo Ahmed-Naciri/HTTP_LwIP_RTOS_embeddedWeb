@@ -1,0 +1,3 @@
+../Core/Src/home.c:12:13:home_write	48	static
+../Core/Src/home.c:45:13:home_write_uint	32	static
+../Core/Src/home.c:54:6:home_send_page	152	static

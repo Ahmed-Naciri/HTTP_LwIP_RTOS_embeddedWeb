@@ -1,0 +1,75 @@
+%% Detailed software architecture diagram for Modbus RTU + Web platform
+flowchart LR
+  %% Hardware / Drivers layer
+  subgraph HW[HAL / Drivers]
+    FLASH[FlashController]
+    ETH[EthernetMAC]
+    UART_DMA[UART_DMA]
+    GPIO_DE[GPIO_DE_RE]
+  end
+
+  %% Middleware layer
+  subgraph MW[Middleware]
+    FREERTOS[FreeRTOS]
+    LWIP[LWIP]
+  end
+
+  %% System services
+  subgraph SV[System Services]
+    HTTPD[HTTPServer]
+    EEPROM[EEPROM_Emulation]
+    PSTORE[PersistentStore]
+  end
+
+  %% Application layer
+  subgraph APP[Application]
+    HTTP_UI[WebUI_Handlers]
+    NETCFG[NetworkConfig]
+    APPCFG[AppConfig_AppDB]
+    POLLING[PollingEngine]
+    MODBUS[ModbusMaster]
+    ALARM[AlarmManager]
+  end
+
+  %% Data flows and interactions
+  ETH -->|IP frames| LWIP
+  LWIP -->|HTTP requests| HTTPD
+  HTTPD -->|route GET/POST| HTTP_UI
+  HTTP_UI -->|update network| NETCFG
+  HTTP_UI -->|update app db| APPCFG
+
+  NETCFG -->|save/load| PSTORE
+  APPCFG -->|save/load| PSTORE
+  PSTORE -->|uses| EEPROM
+  EEPROM -->|program/erase| FLASH
+
+  APPCFG -->|config for polling| POLLING
+  POLLING -->|read request| MODBUS
+  MODBUS -->|serial frames| UART_DMA
+  UART_DMA -->|DE/RE control| GPIO_DE
+  UART_DMA -->|DMA RX -> callback| FREERTOS
+  FREERTOS -->|task context| POLLING
+
+  MODBUS -->|values| APPCFG
+  POLLING -->|evaluate| ALARM
+  ALARM -->|alarm events| HTTP_UI
+
+  %% Runtime services interactions
+  FREERTOS -->|synchronization| APPCFG
+  HTTPD -->|uses| LWIP
+  HTTPD -->|runs in| FREERTOS
+
+  %% Annotations
+  classDef hw fill:#f9f,stroke:#333,stroke-width:1px;
+  classDef mw fill:#efe,stroke:#333,stroke-width:1px;
+  classDef svc fill:#eef,stroke:#333,stroke-width:1px;
+  classDef app fill:#ffd,stroke:#333,stroke-width:1px;
+  class FLASH,ETH,UART_DMA,GPIO_DE hw;
+  class FREERTOS,LWIP mw;
+  class HTTPD,EEPROM,PSTORE svc;
+  class HTTP_UI,NETCFG,APPCFG,POLLING,MODBUS,ALARM app;
+
+  %% Edge labels for key flows
+  POLLING ---|"periodic read"| MODBUS
+  MODBUS ---|"CRC and response checks"| POLLING
+  PSTORE ---|"blob save/load"| EEPROM

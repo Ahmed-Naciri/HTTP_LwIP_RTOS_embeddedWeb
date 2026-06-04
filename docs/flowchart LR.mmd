@@ -1,0 +1,43 @@
+flowchart LR
+  subgraph Application_Logic[Application Logic]
+    HTTP[HTTP Server]
+    MODBUS[Modbus RTU Master]
+    CONFIG[Config]
+    POLLING[Polling Engine]
+    ALARM[Alarms]
+    APPDB[(App DB)]
+  end
+
+  subgraph Services[FreeRTOS Services]
+    TASKS[FreeRTOS Tasks]
+  end
+
+  subgraph Persistence[EEPROM Emulation]
+    EE[EEPROM Emulation]
+  end
+
+  subgraph HAL[HAL / Drivers]
+    UART[UART RS485 DMA]
+    GPIO[GPIO DE/RE]
+    ETH[Ethernet MAC]
+    FLASH[Flash Controller]
+  end
+
+  HTTP --> CONFIG
+  HTTP --> POLLING
+  CONFIG --> EE
+  CONFIG --> UART
+  POLLING --> MODBUS
+  MODBUS --> POLLING
+  POLLING --> ALARM
+  ALARM --> HTTP
+  TASKS --> POLLING
+  TASKS --> MODBUS
+  EE --> CONFIG
+  FLASH --> EE
+  UART --> MODBUS
+  GPIO --> UART
+  ETH --> HTTP
+  APPDB --> POLLING
+  CONFIG --> APPDB
+  APPDB --> EE
