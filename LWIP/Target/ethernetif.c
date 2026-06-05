@@ -146,7 +146,7 @@ void HAL_ETH_RxCpltCallback(ETH_HandleTypeDef *handlerEth)
 {
   osSemaphoreRelease(RxPktSemaphore);
 }
-/** 
+/**
   * @brief  Ethernet Tx Transfer completed callback
   * @param  handlerEth: ETH handler
   * @retval None
@@ -964,4 +964,3 @@ void HAL_ETH_TxFreeCallback(uint32_t * buff)
 /* USER CODE BEGIN 8 */
 
 /* USER CODE END 8 */
-

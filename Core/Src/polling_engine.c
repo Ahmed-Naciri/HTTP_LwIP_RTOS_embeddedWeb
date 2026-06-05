@@ -129,6 +129,14 @@ void pollingEngine_task(void)
 
  }
 
+ if ((modbusState == MODBUS_MASTER_ERROR) || (modbusState == MODBUS_MASTER_TIMEOUT))
+ {
+	 /* Recover from a failed transaction so polling does not stay blocked forever. */
+	 modbusMaster_init();
+	 pollingEngine_moveToNextRegister();
+	 return;
+ }
+
 
 
 

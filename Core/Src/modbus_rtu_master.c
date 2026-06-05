@@ -14,11 +14,11 @@ static uint8_t modbusMasterResponse[MODBUS_MAX_RESPONSE_LENGHT];
 static modbusMasterStatus_t modbusMasterStatus = MODBUS_MASTER_IDLE;
 static uint16_t modbusExpectedResponseLength = 0;
 static uint16_t modbusLastRegisterValue = 0;
-// static uint32_t modbusRequestStartTick = 0u;
+static uint32_t modbusRequestStartTick = 0u;
 
-// #define MODBUS_TIMEOUT_LIMIT_MS 2000u
+#define MODBUS_TIMEOUT_LIMIT_MS 300u
 
-extern UART_HandleTypeDef huart3;
+extern UART_HandleTypeDef huart1;
 
 
 static uint16_t modbusMaster_Crc16(uint8_t* frameBuffer, uint16_t frameLength)
@@ -52,10 +52,14 @@ static uint16_t modbusMaster_Crc16(uint8_t* frameBuffer, uint16_t frameLength)
 
 void modbusMaster_init(void)
 {
+	/* Ensure no stale DMA RX transfer remains active after an error/timeout. */
+	(void)HAL_UART_AbortReceive(&huart1);
+	(void)HAL_UART_AbortTransmit(&huart1);
+
 	modbusMasterStatus = MODBUS_MASTER_IDLE;
 	modbusExpectedResponseLength=0;
 	modbusLastRegisterValue =0 ;
-	//modbusRequestStartTick = 0u;
+	modbusRequestStartTick = 0u;
 
 	memset(modbusMasterRequest,0,sizeof(modbusMasterRequest));
 	memset(modbusMasterResponse,0,sizeof(modbusMasterResponse));
@@ -113,7 +117,7 @@ HAL_StatusTypeDef modbusMaster_readHoldingRegister(uint8_t slaveAddress ,uint16_
     modbusMasterRequest[7] = (crcValue >> 8) & 0xff;
 
     modbusExpectedResponseLength=5+ (2*registerCount);
-	//modbusRequestStartTick = HAL_GetTick();
+	modbusRequestStartTick = HAL_GetTick();
 
 
     memset(modbusMasterResponse,0,sizeof(modbusMasterResponse));
@@ -139,6 +143,14 @@ HAL_StatusTypeDef modbusMaster_readHoldingRegister(uint8_t slaveAddress ,uint16_
 
 modbusMasterStatus_t modbusMaster_GetState(void)
 {
+  if (modbusMasterStatus == MODBUS_MASTER_WAITING_RESPONSE)
+  {
+	  if ((HAL_GetTick() - modbusRequestStartTick) >= MODBUS_TIMEOUT_LIMIT_MS)
+	  {
+		  modbusMasterStatus = MODBUS_MASTER_TIMEOUT;
+	  }
+  }
+
   return modbusMasterStatus;
 }
 
@@ -158,6 +170,7 @@ HAL_StatusTypeDef modbusMaster_GetLastRegisterValue(uint16_t* registerValue)
 
 	*registerValue = modbusLastRegisterValue;
 	modbusMasterStatus = MODBUS_MASTER_IDLE;
+	modbusRequestStartTick = 0u;
 
 	return HAL_OK;
 
@@ -168,7 +181,7 @@ void modbusMaster_cpltCallBack(UART_HandleTypeDef* huart)
   uint16_t calculatedCrc;
   uint16_t receivedCrc;
 
-  if(huart -> Instance != USART3)
+  if(huart -> Instance != USART1)
   {
 	  return;
   }
@@ -184,12 +197,12 @@ void modbusMaster_cpltCallBack(UART_HandleTypeDef* huart)
   if(calculatedCrc != receivedCrc)
   {
 	  modbusMasterStatus = MODBUS_MASTER_ERROR;
-		  //modbusRequestStartTick = 0u;
+	  modbusRequestStartTick = 0u;
 	  return;
   }
   modbusLastRegisterValue = ((uint16_t)modbusMasterResponse[3] << 8) | modbusMasterResponse[4];
   modbusMasterStatus = MODBUS_MASTER_RESPONSE_READY;
-	//modbusRequestStartTick = 0u;
+	modbusRequestStartTick = 0u;
 
 }
 // void modbusMaster_tickTimeout(void)

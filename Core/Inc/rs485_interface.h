@@ -10,7 +10,7 @@
 #include "main.h"
 #include "app_config.h"
 
-#define GPIO_DERICTION_PORT GPIOD
+#define GPIO_DERICTION_PORT GPIOF
 #define GPIO_DERICTION_PIN GPIO_PIN_12
 
 void rs485_interface_init(void);
