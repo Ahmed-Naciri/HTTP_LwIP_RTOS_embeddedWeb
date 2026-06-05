@@ -4,4 +4,5 @@
 ../Core/Src/modbus_rtu_master.c:87:19:modbusMaster_readHoldingRegister	24	static
 ../Core/Src/modbus_rtu_master.c:144:22:modbusMaster_GetState	8	static
 ../Core/Src/modbus_rtu_master.c:159:19:modbusMaster_GetLastRegisterValue	16	static
-../Core/Src/modbus_rtu_master.c:179:6:modbusMaster_cpltCallBack	24	static
+../Core/Src/modbus_rtu_master.c:179:19:modbusMaster_GetLastRegisterValues	16	static
+../Core/Src/modbus_rtu_master.c:199:6:modbusMaster_cpltCallBack	24	static

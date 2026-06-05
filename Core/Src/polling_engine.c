@@ -8,6 +8,7 @@
 #include "polling_engine.h"
 #include "app_config.h"
 #include "modbus_rtu_master.h"
+#include <stdint.h>
 
 static uint8_t currentSlaveIndex;
 static uint16_t currentRegisterIndex;
@@ -64,7 +65,14 @@ void pollingEngine_task(void)
 {
 
   uint16_t registerValue;
+	uint16_t registerValueHi;
+	uint16_t registerValueLo;
+	union {
+		uint32_t raw;
+		float value;
+	} floatConverter;
   modbusMasterStatus_t modbusState;
+	uint16_t registerCount = 1u;
 
   modbusState = modbusMaster_GetState();
 
@@ -80,50 +88,63 @@ void pollingEngine_task(void)
 	  return;
   }
 
+  if (appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].registerType == REG_TYPE_FLOAT)
+  {
+    registerCount = 2u;
+  }
+
  if(modbusState == MODBUS_MASTER_IDLE)
  {
 	 modbusMaster_readHoldingRegister(
 			 appDb.slaveConfig[currentSlaveIndex].slaveAddress,
 			 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].regAddress,
-			 1);
+			 registerCount);
 	 return;
  }
 
  if(modbusState == MODBUS_MASTER_RESPONSE_READY)
  {
-	if(modbusMaster_GetLastRegisterValue(&registerValue) == HAL_OK)
+	registerConfig_t *reg = &appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex];
+
+	if (reg->registerType == REG_TYPE_FLOAT)
 	{
-		registerConfig_t *reg = &appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex];
-
-		/* Interpret raw 16-bit value according to the register type. */
-		switch (reg->registerType)
+		if (modbusMaster_GetLastRegisterValues(&registerValueHi, &registerValueLo) == HAL_OK)
 		{
-			case REG_TYPE_I16:
-				/* signed 16-bit */
-				reg->lastValue = (float)((int16_t)registerValue);
-				break;
-
-			case REG_TYPE_U16:
-			default:
-				/* unsigned 16-bit (default behavior) */
-				reg->lastValue = (float)registerValue;
-				break;
+			floatConverter.raw = ((uint32_t)registerValueHi << 16) | (uint32_t)registerValueLo;
+			reg->lastValue = floatConverter.value;
 		}
-
-		reg->valid = 1;
-		pollingEngine_updateAlarmState(reg);
-
-		/* Persist signed registers after a successful read so the last value survives reboot. */
-		if (reg->registerType == REG_TYPE_I16)
+		else
 		{
-			(void)appConfig_save();
+			reg->valid = 0u;
+			reg->alarmActive = 0u;
+			pollingEngine_moveToNextRegister();
+			return;
 		}
 	}
-	 else
-	 {
-		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].valid = 0;
-		 appDb.slaveConfig[currentSlaveIndex].registerConfig[currentRegisterIndex].alarmActive = 0u;
-	 }
+	else if(modbusMaster_GetLastRegisterValue(&registerValue) == HAL_OK)
+	{
+		if (reg->registerType == REG_TYPE_I16)
+		{
+			/* signed 16-bit */
+			reg->lastValue = (float)((int16_t)registerValue);
+		}
+		else
+		{
+			/* unsigned 16-bit (default behavior) */
+			reg->lastValue = (float)registerValue;
+		}
+	}
+	else
+	{
+		reg->valid = 0u;
+		reg->alarmActive = 0u;
+		pollingEngine_moveToNextRegister();
+		return;
+	}
+
+	reg->valid = 1;
+	pollingEngine_updateAlarmState(reg);
+
 	 pollingEngine_moveToNextRegister();
 	 return;
 

@@ -9,14 +9,41 @@
 #include "main.h"
 #include "lwip.h"
 #include "lwip/ip4_addr.h"
+#include "lwip/sys.h"
 
 #include <stdio.h>
 #include <string.h>
 
 static void http_write(struct netconn *conn, const char *s)
 {
-  if ((s != NULL) && (conn != NULL)) {
-    netconn_write(conn, s, strlen(s), NETCONN_COPY);
+  if ((s == NULL) || (conn == NULL)) {
+    return;
+  }
+
+  {
+    const char *p = s;
+    size_t remaining = strlen(s);
+
+    while (remaining > 0u) {
+      size_t chunk = (remaining > 256u) ? 256u : remaining;
+      err_t err;
+      uint16_t retry = 0u;
+
+      do {
+        err = netconn_write(conn, p, chunk, NETCONN_COPY);
+        if (err == ERR_MEM) {
+          sys_msleep(2u);
+        }
+        retry++;
+      } while ((err == ERR_MEM) && (retry < 200u));
+
+      if (err != ERR_OK) {
+        break;
+      }
+
+      p += chunk;
+      remaining -= chunk;
+    }
   }
 }
 
@@ -201,11 +228,6 @@ void network_config_http_send_form(struct netconn *conn)
   uint8_t disp_mask[4];
   uint8_t disp_gw[4];
 
-    /* Start with persisted values, then override with live netif values when
-       link is up so UI shows current runtime state.Because the page then shows the actual running network state,
-       not just the last saved config (last config will be displayed after reboot). */
-
-  //g_network_config = what you configured / saved
   disp_ip[0] = g_network_config.ip[0];
   disp_ip[1] = g_network_config.ip[1];
   disp_ip[2] = g_network_config.ip[2];
@@ -221,7 +243,6 @@ void network_config_http_send_form(struct netconn *conn)
   disp_gw[2] = g_network_config.gateway[2];
   disp_gw[3] = g_network_config.gateway[3];
 
-//gnetif = what the network actually uses
   if (netif_is_up(&gnetif) && netif_is_link_up(&gnetif)) {
     disp_ip[0] = (uint8_t)ip4_addr1_16(netif_ip4_addr(&gnetif));
     disp_ip[1] = (uint8_t)ip4_addr2_16(netif_ip4_addr(&gnetif));
@@ -239,37 +260,78 @@ void network_config_http_send_form(struct netconn *conn)
     disp_gw[3] = (uint8_t)ip4_addr4_16(netif_ip4_gw(&gnetif));
   }
 
-  /* Stream the page directly to avoid building a large dynamic buffer. */
   http_write(conn,
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: text/html\r\n"
     "Cache-Control: no-cache\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "<!doctype html>"
-    "<html><head><meta charset=\"utf-8\"><title>Network Config</title></head>"
-    "<body style=\"font-family:Arial,sans-serif;max-width:640px;margin:20px auto;\">"
-    "<h1>Network Configuration</h1>"
-    "<form method=\"POST\" action=\"/save_config\">"
-    "<p><label>IP Address<br><input name=\"ip\" value=\""
-  );
+    "<!DOCTYPE html><html lang='en'><head>"
+    "<meta charset='utf-8'/>"
+    "<meta content='width=device-width, initial-scale=1.0' name='viewport'/>"
+    "<title>Clinical Precision | Network</title>"
+    "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'/>"
+    "<link href='https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap' rel='stylesheet'/>"
+    "<style>"
+    ":root{--primary:#00478d;--primary-container:#005eb8;--secondary:#5c5f63;--tertiary:#ba1a1a;--surface:#f7faf9;--surface-container-low:#f1f4f3;--surface-container-lowest:#ffffff;--on-surface:#181c1c;--on-surface-variant:#424752;--outline-variant:#c2c6d4;--error-container:#ffdad6;--on-error-container:#93000a;--text-main:#181c1c;--text-secondary:#64748b;}"
+    "*{box-sizing:border-box;margin:0;padding:0;}"
+    "body{font-family:'Inter',sans-serif;background-color:var(--surface);color:var(--text-main);display:flex;min-height:100vh;overflow:hidden;}"
+    "aside{width:256px;background-color:var(--surface-container-low);border-right:1px solid var(--outline-variant);display:flex;flex-direction:column;padding:24px 16px;}"
+    ".brand{margin-bottom:40px;padding-left:8px;}"
+    ".brand h1{font-size:20px;font-weight:900;color:var(--primary);letter-spacing:-0.025em;}"
+    ".brand p{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--secondary);font-weight:700;opacity:0.7;}"
+    "nav{flex:1;}"
+    ".nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;text-decoration:none;color:#475569;font-size:14px;font-weight:500;border-radius:8px;margin-bottom:4px;transition:background 0.2s;}"
+    ".nav-item:hover{background-color:#e2e8f0;}"
+    ".nav-item.active{background-color:var(--surface-container-lowest);color:var(--primary);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.05);}"
+    ".sidebar-footer{padding-top:16px;border-top:1px solid var(--outline-variant);}"
+    ".status-pill{display:flex;align-items:center;gap:12px;padding:8px;}"
+    ".status-icon{width:32px;height:32px;border-radius:50%;background-color:var(--primary-container);color:white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}"
+    ".status-text p:first-child{font-size:12px;font-weight:700;}.status-text p:last-child{font-size:10px;color:#16a34a;font-weight:600;}"
+    "main{flex:1;display:flex;flex-direction:column;overflow-y:auto;min-height:0;}"
+    "header{height:64px;display:flex;align-items:center;padding:0 32px;background-color:var(--surface);position:sticky;top:0;z-index:10;}"
+    ".header-left{display:flex;align-items:center;gap:16px;}.header-left h2{font-size:18px;font-weight:700;color:#0f172a;}.divider{width:1px;height:16px;background-color:var(--outline-variant);}.breadcrumb{font-size:14px;font-weight:500;color:var(--text-secondary);}"
+    ".content-body{padding:32px;max-width:1200px;}"
+    ".page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;gap:16px;}.page-title h2{font-size:30px;font-weight:900;letter-spacing:-0.025em;}.button-group{display:flex;gap:8px;flex-wrap:wrap;}.btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;text-decoration:none;}.btn-outline{background:var(--surface-container-lowest);border-color:var(--outline-variant);color:#475569;}.btn-primary{background:var(--primary);color:white;box-shadow:0 4px 6px -1px rgba(0,71,141,0.2);}"
+    ".section-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;margin-bottom:24px;}.card{background:var(--surface-container-lowest);border-radius:16px;border:1px solid rgba(0,0,0,0.05);padding:18px;box-shadow:0 4px 12px rgba(0,71,141,0.04);}.card h3{font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:8px;}.summary-card,.form-card{grid-column:1 / -1;}.field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:8px;}label{display:block;font-size:12px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;margin-bottom:6px;}input{width:100%;padding:12px 14px;border:1px solid var(--outline-variant);border-radius:10px;background:#fff;font:inherit;color:#0f172a;outline:none;}input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,78,141,0.12);}.full{grid-column:1 / -1;}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;}.value-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}.value-box{background:var(--surface-container-low);border-radius:14px;padding:16px;}.value-box .label{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:6px;}.value-box .value{font-size:22px;font-weight:900;color:#0f172a;}.muted{font-size:13px;color:#64748b;font-weight:500;margin-top:6px;}"
+    ".footer{margin-top:32px;padding-top:24px;border-top:1px solid var(--outline-variant);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}.back-link{text-decoration:none;color:var(--primary);font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}.session-info{font-size:10px;color:#94a3b8;font-weight:500;}.material-symbols-outlined{font-size:20px;vertical-align:middle;}"
+    "@media (max-width:1024px){body{flex-direction:column;overflow:auto;}aside{width:100%;border-right:none;border-bottom:1px solid var(--outline-variant);}main{overflow:visible;}.content-body{padding:20px;}.section-grid{grid-template-columns:1fr;}.page-header{align-items:flex-start;flex-direction:column;}.field-grid,.value-grid{grid-template-columns:1fr;}.button-group{width:100%;}.btn{justify-content:center;flex:1 1 140px;}}"
+    "@media (max-width:640px){header{padding:14px 16px;}.content-body{padding:16px;}.page-title h2{font-size:24px;}}"
+    "</style></head><body>"
+    "<aside><div class='brand'><h1>HealthSystems</h1><p>Precision Node 04</p></div><nav>"
+    "<a class='nav-item' href='/'><span class='material-symbols-outlined'>home</span>Home</a>"
+    "<a class='nav-item active' href='/config.html'><span class='material-symbols-outlined'>hub</span>Network</a>"
+    "<a class='nav-item' href='/modbus_values.html'><span class='material-symbols-outlined' style='font-variation-settings: \'FILL\' 1;'>chat</span>Live Readings</a>"
+    "<a class='nav-item' href='/modbus_config_port.html'><span class='material-symbols-outlined'>build</span>Maintenance</a>"
+    "</nav><div class='sidebar-footer'><div class='status-pill'><div class='status-icon'>SN04</div><div class='status-text'><p>System Status</p><p>Nominal</p></div></div></div></aside>"
+    "<main><header><div class='header-left'><h2>Clinical Precision Home</h2><div class='divider'></div><span class='breadcrumb'>Configuration / Ethernet</span></div></header><div class='content-body'>"
+    "<div class='page-header'><div class='page-title'><h2>Network Configuration</h2></div><div class='button-group'><a class='btn btn-outline' href='/modbus_config_port.html'>Port</a><a class='btn btn-outline' href='/modbus_config_slaves.html'>Slaves</a><a class='btn btn-outline' href='/modbus_config_registers.html'>Registers</a></div></div>"
+    "<div class='section-grid'><div class='card summary-card'><div class='value-grid'>"
+    "<div class='value-box'><div class='label'>IP Address</div><div class='value'>");
   http_write_ipv4(conn, disp_ip);
-  http_write(conn, "\" style=\"width:260px\"></label></p>");
-
-  http_write(conn, "<p><label>Netmask<br><input name=\"netmask\" value=\"");
+  http_write(conn,
+    "</div></div><div class='value-box'><div class='label'>Netmask</div><div class='value'>");
   http_write_ipv4(conn, disp_mask);
-  http_write(conn, "\" style=\"width:260px\"></label></p>");
-
-  http_write(conn, "<p><label>Gateway<br><input name=\"gateway\" value=\"");
+  http_write(conn,
+    "</div></div><div class='value-box'><div class='label'>Gateway</div><div class='value'>");
   http_write_ipv4(conn, disp_gw);
   http_write(conn,
-    "\" style=\"width:260px\"></label></p>"
-    "<p style=\"display:flex;gap:12px;flex-wrap:wrap;\">"
-    "<button type=\"submit\" name=\"reboot\" value=\"1\" style=\"background:#b00020;color:#fff;border:none;padding:8px 14px;border-radius:4px;cursor:pointer;\">Apply &amp; Reboot</button>"
-    "</p>"
-    "</form>"
-    "<p><a href=\"/\">Back to main page</a></p>"
-    "</body></html>"
+    "</div></div></div></div>"
+    "<div class='card form-card'><form method='POST' action='/save_config' class='field-grid'>"
+    "<div><label for='ip'>IP Address</label><input id='ip' name='ip' value='"
+  );
+  http_write_ipv4(conn, disp_ip);
+  http_write(conn,
+    "' autocomplete='off'/></div><div><label for='netmask'>Netmask</label><input id='netmask' name='netmask' value='"
+  );
+  http_write_ipv4(conn, disp_mask);
+  http_write(conn,
+    "' autocomplete='off'/></div><div class='full'><label for='gateway'>Gateway</label><input id='gateway' name='gateway' value='"
+  );
+  http_write_ipv4(conn, disp_gw);
+  http_write(conn,
+    "' autocomplete='off'/></div><div class='full actions'><button class='btn btn-primary' type='submit' name='reboot' value='1'><span class='material-symbols-outlined'>restart_alt</span>Apply &amp; Reboot</button></div></form></div></div>"
+    "<div class='footer'><a class='back-link' href='/'><span class='material-symbols-outlined'>arrow_back</span>Back to main page</a><p class='session-info'>Configuration is persisted in flash-backed storage.</p></div></main></body></html>"
   );
 }
 

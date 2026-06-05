@@ -1264,24 +1264,102 @@ void app_config_http_send_port_form(struct netconn *conn)
 void app_config_http_send_slaves_form(struct netconn *conn)
 {
   uint8_t i;
+  uint8_t has_slave = 0u;
 
   http_write(conn,
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: text/html\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-    "<title>Slaves Config</title>"
-    "<style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px}form{background:#f9f9f9;padding:15px;margin:15px 0;border-radius:4px}input,select{padding:6px;margin:5px}button{padding:8px 15px;background:#0066cc;color:white;border:none;cursor:pointer;border-radius:4px}button:hover{background:#0052a3}.del-btn{background:#c00}.del-btn:hover{background:#900}</style>"
-    "</head><body>"
-    "<h1>Configure Modbus Slaves</h1>"
-    "<h2>Current Slaves</h2>"
-    "<table><tr><th>Name</th><th>Address</th><th>Port</th><th>Registers</th><th>Action</th></tr>"
+    "<!DOCTYPE html><html lang='en'><head>"
+    "<meta charset='utf-8'/>"
+    "<meta content='width=device-width, initial-scale=1.0' name='viewport'/>"
+    "<title>Clinical Precision | Slaves</title>"
+    "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'/>"
+    "<link href='https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap' rel='stylesheet'/>"
+    "<style>"
+    ":root{--primary:#00478d;--primary-container:#005eb8;--secondary:#5c5f63;--tertiary:#ba1a1a;--surface:#f7faf9;--surface-container-low:#f1f4f3;--surface-container-lowest:#ffffff;--on-surface:#181c1c;--on-surface-variant:#424752;--outline-variant:#c2c6d4;--error-container:#ffdad6;--on-error-container:#93000a;--text-main:#181c1c;--text-secondary:#64748b;}"
+    "*{box-sizing:border-box;margin:0;padding:0;}"
+    "body{font-family:'Inter',sans-serif;background-color:var(--surface);color:var(--text-main);display:flex;height:100vh;overflow:hidden;}"
+    "aside{width:256px;background-color:var(--surface-container-low);border-right:1px solid var(--outline-variant);display:flex;flex-direction:column;padding:24px 16px;}"
+    ".brand{margin-bottom:40px;padding-left:8px;}"
+    ".brand h1{font-size:20px;font-weight:900;color:var(--primary);letter-spacing:-0.025em;}"
+    ".brand p{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--secondary);font-weight:700;opacity:0.7;}"
+    "nav{flex:1;}"
+    ".nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;text-decoration:none;color:#475569;font-size:14px;font-weight:500;border-radius:8px;margin-bottom:4px;transition:background 0.2s;}"
+    ".nav-item:hover{background-color:#e2e8f0;}"
+    ".nav-item.active{background-color:var(--surface-container-lowest);color:var(--primary);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.05);}"
+    ".menu{display:flex;flex-direction:column;gap:8px;}"
+    ".menu > summary{list-style:none;cursor:pointer;user-select:none;}"
+    ".menu > summary::-webkit-details-marker{display:none;}"
+    ".menu-links{display:flex;flex-direction:column;gap:6px;padding-left:12px;margin-top:-2px;}"
+    ".menu-link{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;color:#5c6673;font-size:13px;font-weight:600;text-decoration:none;}"
+    ".menu-link.active{background:#fff;color:#0d4f99;box-shadow:0 1px 3px rgba(0,0,0,0.08);}"
+    ".menu-link .bullet{width:6px;height:6px;border-radius:50%;background:#93a4ba;flex:0 0 auto;}"
+    ".menu-link.active .bullet{background:#0d4f99;}"
+    ".sidebar-footer{padding-top:16px;border-top:1px solid var(--outline-variant);}"
+    ".status-pill{display:flex;align-items:center;gap:12px;padding:8px;}"
+    ".status-icon{width:32px;height:32px;border-radius:50%;background-color:var(--primary-container);color:white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}"
+    ".status-text p:first-child{font-size:12px;font-weight:700;}.status-text p:last-child{font-size:10px;color:#16a34a;font-weight:600;}"
+    "main{flex:1;display:flex;flex-direction:column;overflow-y:auto;min-height:0;}"
+    "header{height:64px;display:flex;align-items:center;padding:0 32px;background-color:var(--surface);position:sticky;top:0;z-index:10;}"
+    ".header-left{display:flex;align-items:center;gap:16px;}.header-left h2{font-size:18px;font-weight:700;color:#0f172a;}.divider{width:1px;height:16px;background-color:var(--outline-variant);}.breadcrumb{font-size:14px;font-weight:500;color:var(--text-secondary);}"
+    ".content-body{padding:32px;max-width:1200px;}"
+    ".page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;gap:16px;}.page-title h2{font-size:30px;font-weight:900;letter-spacing:-0.025em;}.page-title p{font-size:14px;color:var(--text-secondary);}.button-group{display:flex;gap:8px;flex-wrap:wrap;}.btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;text-decoration:none;}.btn-outline{background:var(--surface-container-lowest);border-color:var(--outline-variant);color:#475569;}.btn-primary{background:var(--primary);color:white;box-shadow:0 4px 6px -1px rgba(0,71,141,0.2);}"
+    ".grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:24px;}.card{background:var(--surface-container-lowest);border-radius:16px;border:1px solid rgba(0,0,0,0.05);padding:18px;box-shadow:0 4px 12px rgba(0,71,141,0.04);}.card h3{font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:8px;}.card p{font-size:22px;font-weight:900;color:#0f172a;}.muted{font-size:13px;color:#64748b;font-weight:500;margin-top:6px;}.field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:8px;}label{display:block;font-size:12px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;margin-bottom:6px;}input,select{width:100%;padding:12px 14px;border:1px solid var(--outline-variant);border-radius:10px;background:#fff;font:inherit;color:#0f172a;outline:none;}input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,78,141,0.12);}.full{grid-column:1 / -1;}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;}"
+    "table{width:100%;border-collapse:collapse;}thead{background:var(--surface-container-low);}th{padding:14px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;font-weight:900;color:#64748b;}td{padding:14px 16px;border-bottom:1px solid #edf2f7;font-size:14px;vertical-align:middle;}.table-wrap{overflow-x:auto;border-radius:14px;border:1px solid rgba(0,0,0,0.05);}.del-btn{border:none;background:var(--tertiary);color:white;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;}.empty-state{padding:16px;border-radius:12px;background:var(--surface-container-low);color:#64748b;font-size:14px;}"
+    ".footer{margin-top:32px;padding-top:24px;border-top:1px solid var(--outline-variant);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}.back-link{text-decoration:none;color:var(--primary);font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}.session-info{font-size:10px;color:#94a3b8;font-weight:500;}.material-symbols-outlined{font-size:20px;vertical-align:middle;}"
+    "@media (max-width:1024px){body{flex-direction:column;overflow:auto;}aside{width:100%;border-right:none;border-bottom:1px solid var(--outline-variant);}main{overflow:visible;}header{height:auto;padding:16px 20px;flex-wrap:wrap;}.content-body{padding:20px;}.grid{grid-template-columns:1fr 1fr;}.page-header{align-items:flex-start;flex-direction:column;}.field-grid{grid-template-columns:1fr;}.button-group{width:100%;}.btn{justify-content:center;flex:1 1 140px;}}"
+    "@media (max-width:640px){header{padding:14px 16px;}.content-body{padding:16px;}.grid{grid-template-columns:1fr;}.page-title h2{font-size:24px;}}"
+    "</style></head><body>"
+    "<aside><div class='brand'><h1>HealthSystems</h1><p>Precision Node 04</p></div><nav>"
+    "<a class='nav-item' href='/'><span class='material-symbols-outlined'>home</span>Home</a>"
+    "<a class='nav-item' href='/config.html'><span class='material-symbols-outlined'>hub</span>Network</a>"
+    "<a class='nav-item' href='/modbus_values.html'><span class='material-symbols-outlined' style='font-variation-settings: \'FILL\' 1;'>chat</span>Live Readings</a>"
+    "<details class='menu' open><summary class='nav-item active'><span class='material-symbols-outlined'>build</span>Maintenance</summary><div class='menu-links'>"
+    "<a class='menu-link' href='/modbus_config_port.html'><span class='bullet'></span>Port</a>"
+    "<a class='menu-link active' href='/modbus_config_slaves.html'><span class='bullet'></span>Slaves</a>"
+    "<a class='menu-link' href='/modbus_config_registers.html'><span class='bullet'></span>Registers</a>"
+    "</div></details>"
+    "</nav><div class='sidebar-footer'><div class='status-pill'><div class='status-icon'>SN04</div><div class='status-text'><p>System Status</p><p>Nominal</p></div></div></div></aside>"
+    "<main><header><div class='header-left'><h2>Clinical Precision Home</h2><div class='divider'></div><span class='breadcrumb'>Maintenance / Slaves</span></div></header><div class='content-body'>"
+    "<div class='page-header'><div class='page-title'><h2>Modbus Slaves</h2><p>Visual style matched to the home dashboard while keeping the slave configuration backend intact.</p></div><div class='button-group'><a class='btn btn-outline' href='/modbus_config_port.html'>Port</a><a class='btn btn-outline' href='/modbus_config_registers.html'>Registers</a></div></div>"
+    "<div class='grid'><div class='card'><h3>Configured Slaves</h3><p>"
+  );
+
+  {
+    unsigned long slave_count = 0u;
+
+    for (i = 0; i < MAX_SLAVES; i++) {
+      if (appDb.slaveConfig[i].used == 1u) {
+        slave_count++;
+      }
+    }
+
+    http_write_uint(conn, slave_count);
+  }
+
+  http_write(conn,
+    "</p><div class='muted'>Configured Modbus RTU slave devices</div></div>"
+    "<div class='card'><h3>Active Port</h3><p>UART"
+  );
+
+  if (appDb.ports[0].portId < (uartPortId_t)MAX_UART_PORTS) {
+    http_write_uint(conn, (unsigned long)(appDb.ports[0].portId + 1u));
+  } else {
+    http_write(conn, "1");
+  }
+
+  http_write(conn,
+    "</p><div class='muted'>Current UART port selected for polling</div></div>"
+    "<div class='card'><h3>Quick Link</h3><p>Slave setup</p><div class='muted'>Use the form below to add or remove devices</div></div></div>"
+    "<div class='grid'><div class='card' style='grid-column:span 2;'><h3>Current Slaves</h3><div class='table-wrap'><table><thead><tr><th>Name</th><th>Address</th><th>Port</th><th>Registers</th><th>Action</th></tr></thead><tbody>"
   );
 
   for (i = 0; i < MAX_SLAVES; i++) {
     if (appDb.slaveConfig[i].used == 1u) {
-      http_write(conn, "<tr><td>");
+      has_slave = 1u;
+      http_write(conn, "<tr><td class='slave-name'>");
       http_write_html_escaped(conn, slave_display_name(i));
       http_write(conn, "</td><td>");
       http_write_uint(conn, (unsigned long)appDb.slaveConfig[i].slaveAddress);
@@ -1299,15 +1377,16 @@ void app_config_http_send_slaves_form(struct netconn *conn)
     }
   }
 
-  http_write(conn, "</table>\n");
+  if (has_slave == 0u) {
+    http_write(conn, "<tr><td colspan='5'><div class='empty-state'>No slave configured yet.</div></td></tr>");
+  }
 
   http_write(conn,
-    "<h2>Add New Slave</h2>"
-    "<form method='POST' action='/save_modbus_config'>"
+    "</tbody></table></div></div><div class='card'><h3>Add Slave</h3><form method='POST' action='/save_modbus_config' class='field-grid'>"
     "<input type='hidden' name='action' value='add_slave'>"
-    "<p><label>Slave Name:<br><input name='slave_name' maxlength='23' style='width:200px' required></label></p>"
-    "<p><label>Slave Address (1..247):<br><input name='slave_address' style='width:200px' required></label></p>"
-    "<p><label>UART Port:<br><select name='slave_port'>"
+    "<div class='full'><label for='slave_name'>Slave Name</label><input id='slave_name' name='slave_name' maxlength='23' required></div>"
+    "<div><label for='slave_address'>Slave Address (1..247)</label><input id='slave_address' name='slave_address' type='number' min='1' max='247' required></div>"
+    "<div><label for='slave_port'>UART Port</label><select id='slave_port' name='slave_port'>"
   );
 
   for (i = 0; i < MAX_UART_PORTS; i++) {
@@ -1319,16 +1398,8 @@ void app_config_http_send_slaves_form(struct netconn *conn)
   }
 
   http_write(conn,
-    "</select></label></p>"
-    "<p><button type='submit'>Add Slave</button></p>"
-    "</form>"
-    "<hr><p><strong>Navigation:</strong></p>"
-    "<p><a href='/modbus_config_port.html'>Configure Port</a></p>"
-    "<p><a href='/modbus_config_registers.html'>Configure Registers</a></p>"
-    "<p><a href='/modbus_values.html'>View Values</a></p>"
-    "<p><a href='/config.html'>Network Config</a></p>"
-    "<p><a href='/'>Home</a></p>"
-    "</body></html>"
+    "</select></div><div class='full actions'><button class='btn btn-primary' type='submit'><span class='material-symbols-outlined'>add</span>Add Slave</button></div></form></div></div>"
+    "<div class='footer'><a class='back-link' href='/modbus_config_port.html'><span class='material-symbols-outlined'>arrow_back</span>Back to Port configuration</a><p class='session-info'>Slave configuration is stored in flash-backed application data.</p></div></div></main></body></html>"
   );
 }
 
@@ -1343,19 +1414,57 @@ void app_config_http_send_registers_form(struct netconn *conn)
     "Content-Type: text/html\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-    "<title>Registers Config</title>"
-    "<style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px}form{background:#f9f9f9;padding:15px;margin:15px 0;border-radius:4px}input,select{padding:6px;margin:5px}button{padding:8px 15px;background:#0066cc;color:white;border:none;cursor:pointer;border-radius:4px}button:hover{background:#0052a3}.del-btn{background:#c00}.del-btn:hover{background:#900}</style>"
-    "</head><body>"
-    "<h1>Configure Modbus Registers</h1>"
-    "<h2>Current Registers</h2>"
-    "<table><tr><th>Slave Name</th><th>Slave Addr</th><th>Reg Address</th><th>Type</th><th>Action</th></tr>"
+    "<!DOCTYPE html><html lang='en'><head>"
+    "<meta charset='utf-8'/>"
+    "<meta content='width=device-width, initial-scale=1.0' name='viewport'/>"
+    "<title>Clinical Precision | Registers</title>"
+    "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'/>"
+    "<link href='https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap' rel='stylesheet'/>"
+    "<style>"
+    ":root{--primary:#00478d;--primary-container:#005eb8;--secondary:#5c5f63;--tertiary:#ba1a1a;--surface:#f7faf9;--surface-container-low:#f1f4f3;--surface-container-lowest:#ffffff;--on-surface:#181c1c;--on-surface-variant:#424752;--outline-variant:#c2c6d4;--error-container:#ffdad6;--on-error-container:#93000a;--text-main:#181c1c;--text-secondary:#64748b;}"
+    "*{box-sizing:border-box;margin:0;padding:0;}"
+    "body{font-family:'Inter',sans-serif;background-color:var(--surface);color:var(--text-main);display:flex;height:100vh;overflow:hidden;}"
+    "aside{width:256px;background-color:var(--surface-container-low);border-right:1px solid var(--outline-variant);display:flex;flex-direction:column;padding:24px 16px;}"
+    ".brand{margin-bottom:40px;padding-left:8px;}"
+    ".brand h1{font-size:20px;font-weight:900;color:var(--primary);letter-spacing:-0.025em;}"
+    ".brand p{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--secondary);font-weight:700;opacity:0.7;}"
+    "nav{flex:1;}"
+    ".nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;text-decoration:none;color:#475569;font-size:14px;font-weight:500;border-radius:8px;margin-bottom:4px;transition:background 0.2s;}"
+    ".nav-item:hover{background-color:#e2e8f0;}"
+    ".nav-item.active{background-color:var(--surface-container-lowest);color:var(--primary);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.05);}"
+    ".sidebar-footer{padding-top:16px;border-top:1px solid var(--outline-variant);}"
+    ".status-pill{display:flex;align-items:center;gap:12px;padding:8px;}"
+    ".status-icon{width:32px;height:32px;border-radius:50%;background-color:var(--primary-container);color:white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}"
+    ".status-text p:first-child{font-size:12px;font-weight:700;}.status-text p:last-child{font-size:10px;color:#16a34a;font-weight:600;}"
+    "main{flex:1;display:flex;flex-direction:column;overflow-y:auto;min-height:0;}"
+    "header{height:64px;display:flex;align-items:center;padding:0 32px;background-color:var(--surface);position:sticky;top:0;z-index:10;}"
+    ".header-left{display:flex;align-items:center;gap:16px;}.header-left h2{font-size:18px;font-weight:700;color:#0f172a;}.divider{width:1px;height:16px;background-color:var(--outline-variant);}.breadcrumb{font-size:14px;font-weight:500;color:var(--text-secondary);}"
+    ".content-body{padding:32px;max-width:1200px;}"
+    ".page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;gap:16px;}.page-title h2{font-size:30px;font-weight:900;letter-spacing:-0.025em;}.page-title p{font-size:14px;color:var(--text-secondary);}.button-group{display:flex;gap:8px;flex-wrap:wrap;}.btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;text-decoration:none;}.btn-outline{background:var(--surface-container-lowest);border-color:var(--outline-variant);color:#475569;}.btn-primary{background:var(--primary);color:white;box-shadow:0 4px 6px -1px rgba(0,71,141,0.2);}"
+    ".section-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;margin-bottom:24px;}.card{background:var(--surface-container-lowest);border-radius:16px;border:1px solid rgba(0,0,0,0.05);padding:18px;box-shadow:0 4px 12px rgba(0,71,141,0.04);}.card h3{font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:8px;}.table-card,.form-card,.alarm-card{grid-column:1 / -1;}"
+    ".muted{font-size:13px;color:#64748b;font-weight:500;margin-top:6px;}.field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:8px;}label{display:block;font-size:12px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;margin-bottom:6px;}input,select{width:100%;padding:12px 14px;border:1px solid var(--outline-variant);border-radius:10px;background:#fff;font:inherit;color:#0f172a;outline:none;}input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,78,141,0.12);}.full{grid-column:1 / -1;}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;}"
+    "table{width:100%;border-collapse:collapse;}thead{background:var(--surface-container-low);}th{padding:14px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;font-weight:900;color:#64748b;}td{padding:14px 16px;border-bottom:1px solid #edf2f7;font-size:14px;vertical-align:middle;}.table-wrap{overflow-x:auto;border-radius:14px;border:1px solid rgba(0,0,0,0.05);}.del-btn{border:none;background:var(--tertiary);color:white;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;}.empty-state{padding:16px;border-radius:12px;background:var(--surface-container-low);color:#64748b;font-size:14px;}"
+    ".status-off{color:#94a3b8;font-weight:700;text-transform:uppercase;font-size:10px;}.status-on{color:#0f172a;font-weight:700;text-transform:uppercase;font-size:10px;}"
+    ".footer{margin-top:32px;padding-top:24px;border-top:1px solid var(--outline-variant);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}.back-link{text-decoration:none;color:var(--primary);font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}.session-info{font-size:10px;color:#94a3b8;font-weight:500;}.material-symbols-outlined{font-size:20px;vertical-align:middle;}"
+    "@media (max-width:1024px){body{flex-direction:column;overflow:auto;}aside{width:100%;border-right:none;border-bottom:1px solid var(--outline-variant);}main{overflow:visible;}header{height:auto;padding:16px 20px;flex-wrap:wrap;}.content-body{padding:20px;}.section-grid{grid-template-columns:1fr;}.page-header{align-items:flex-start;flex-direction:column;}.field-grid{grid-template-columns:1fr;}.button-group{width:100%;}.btn{justify-content:center;flex:1 1 140px;}}"
+    "@media (max-width:640px){header{padding:14px 16px;}.content-body{padding:16px;}.page-title h2{font-size:24px;}}"
+    "</style></head><body>"
+    "<aside><div class='brand'><h1>HealthSystems</h1><p>Precision Node 04</p></div><nav>"
+    "<a class='nav-item' href='/'><span class='material-symbols-outlined'>home</span>Home</a>"
+    "<a class='nav-item' href='/config.html'><span class='material-symbols-outlined'>hub</span>Network</a>"
+    "<a class='nav-item' href='/modbus_values.html'><span class='material-symbols-outlined' style='font-variation-settings: \'FILL\' 1;'>chat</span>Live Readings</a>"
+    "<a class='nav-item active' href='/modbus_config_port.html'><span class='material-symbols-outlined'>build</span>Maintenance</a>"
+    "</nav><div class='sidebar-footer'><div class='status-pill'><div class='status-icon'>SN04</div><div class='status-text'><p>System Status</p><p>Nominal</p></div></div></div></aside>"
+    "<main><header><div class='header-left'><h2>Clinical Precision Home</h2><div class='divider'></div><span class='breadcrumb'>Maintenance / Registers</span></div></header><div class='content-body'>"
+    "<div class='page-header'><div class='page-title'><h2>Configure Modbus Registers</h2></div><div class='button-group'><a class='btn btn-outline' href='/modbus_config_port.html'>Port</a><a class='btn btn-outline' href='/modbus_config_slaves.html'>Slaves</a></div></div>"
+    "<div class='section-grid'><div class='card table-card'><div class='table-wrap'><table><thead><tr><th>Slave Name</th><th>Slave Addr</th><th>Reg Address</th><th>Type</th><th>Action</th></tr></thead><tbody>"
   );
 
   for (i = 0; i < MAX_SLAVES; i++) {
     if (appDb.slaveConfig[i].used == 1u) {
       for (j = 0; j < MAX_REGISTERS_PER_SLAVE; j++) {
         if (appDb.slaveConfig[i].registerConfig[j].used == 1u) {
+          has_slave = 1;
           http_write(conn, "<tr><td>");
           http_write_html_escaped(conn, slave_display_name(i));
           http_write(conn, "</td><td>");
@@ -1378,13 +1487,14 @@ void app_config_http_send_registers_form(struct netconn *conn)
     }
   }
 
-  http_write(conn, "</table>\n");
+  if (has_slave == 0) {
+    http_write(conn, "<tr><td colspan='5'><div class='empty-state'>No register configured yet.</div></td></tr>");
+  }
 
   http_write(conn,
-    "<h2>Add New Register</h2>"
-    "<form method='POST' action='/save_modbus_config'>"
+    "</tbody></table></div></div><div class='card form-card'><form method='POST' action='/save_modbus_config' class='field-grid'>"
     "<input type='hidden' name='action' value='add_register'>"
-    "<p><label>Slave:<br><select name='reg_slave_index'>"
+    "<div class='full'><label for='reg_slave_index'>Slave</label><select id='reg_slave_index' name='reg_slave_index'>"
   );
 
   for (i = 0; i < MAX_SLAVES; i++) {
@@ -1401,27 +1511,25 @@ void app_config_http_send_registers_form(struct netconn *conn)
   }
 
   http_write(conn,
-    "</select></label></p>"
-    "<p><label>Register Address (0-65535):<br><input name='reg_address' type='number' min='0' max='65535' style='width:200px' required></label></p>"
-    "<p><label>Register Type:<br><select name='reg_type'>"
+    "</select></div>"
+    "<div><label for='reg_address'>Register Address (0-65535)</label><input id='reg_address' name='reg_address' type='number' min='0' max='65535' required></div>"
+    "<div><label for='reg_type'>Register Type</label><select id='reg_type' name='reg_type'>"
     "<option value='0'>U16 (Unsigned 16-bit)</option>"
     "<option value='1'>I16 (Signed 16-bit)</option>"
     "<option value='2'>FLOAT (32-bit float)</option>"
-    "</select></label></p>"
-    "<p><button type='submit'>Add Register</button></p>"
-    "</form>"
+    "</select><div class='muted'>For FLOAT, enter the first register address; the system reads 2 consecutive registers.</div></div>"
+    "<div class='full actions'><button class='btn btn-primary' type='submit'>Add Register</button></div>"
+    "</form></div>"
   );
 
   if (has_slave == 0) {
-    http_write(conn, "<p style='color:#900;font-weight:bold'>No slaves configured. Add a slave first!</p>");
+    http_write(conn, "<div class='card alarm-card'><div class='empty-state'>No slaves configured. Add a slave first!</div></div>");
   }
 
   http_write(conn,
-    "<h2>Alarm thresholds</h2>"
-    "<p>Set one upper threshold for each register. If the value goes above it, alarm becomes active.</p>"
-    "<form method='POST' action='/save_modbus_config'>"
+    "<div class='card alarm-card'><form method='POST' action='/save_modbus_config'>"
     "<input type='hidden' name='action' value='update_alarm_thresholds_all'>"
-    "<table><tr><th>Slave Name</th><th>Reg Address</th><th>Enabled</th><th>Threshold</th><th>Status</th></tr>"
+    "<div class='table-wrap'><table><thead><tr><th>Slave Name</th><th>Reg Address</th><th>Enabled</th><th>Threshold</th><th>Status</th></tr></thead><tbody>"
   );
 
   for (i = 0; i < MAX_SLAVES; i++) {
@@ -1459,16 +1567,10 @@ void app_config_http_send_registers_form(struct netconn *conn)
     }
   }
 
-  http_write(conn, "</table><p><button type='submit'>Save all thresholds</button></p></form>");
+  http_write(conn, "</tbody></table></div><div class='actions'><button class='btn btn-primary' type='submit'>Save all thresholds</button></div></form></div>");
 
   http_write(conn,
-    "<hr><p><strong>Navigation:</strong></p>"
-    "<p><a href='/modbus_config_port.html'>Configure Port</a></p>"
-    "<p><a href='/modbus_config_slaves.html'>Configure Slaves</a></p>"
-    "<p><a href='/modbus_values.html'>View Values</a></p>"
-    "<p><a href='/config.html'>Network Config</a></p>"
-    "<p><a href='/'>Home</a></p>"
-    "</body></html>"
+    "<div class='footer'><a class='back-link' href='/modbus_config_port.html'><span class='material-symbols-outlined'>arrow_back</span>Back to Port configuration</a><p class='session-info'>Configuration is persisted in flash-backed storage.</p></div></div></main></body></html>"
   );
 }
 

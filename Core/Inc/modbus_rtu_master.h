@@ -28,6 +28,7 @@ HAL_StatusTypeDef modbusMaster_readHoldingRegister(uint8_t slaveAddress ,uint16_
 void modbusMaster_process(void);
 modbusMasterStatus_t modbusMaster_GetState(void);
 HAL_StatusTypeDef modbusMaster_GetLastRegisterValue(uint16_t* registerValue);
+HAL_StatusTypeDef modbusMaster_GetLastRegisterValues(uint16_t* registerValue1, uint16_t* registerValue2);
 void modbusMaster_cpltCallBack(UART_HandleTypeDef* huart);
 /* Reset the Modbus master state after the UART settings change. 
  * Resets Modbus internal state to avoid staying in WAITING_RESPONSE with old timing.

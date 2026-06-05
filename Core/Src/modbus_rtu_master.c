@@ -176,6 +176,26 @@ HAL_StatusTypeDef modbusMaster_GetLastRegisterValue(uint16_t* registerValue)
 
 }
 
+HAL_StatusTypeDef modbusMaster_GetLastRegisterValues(uint16_t* registerValue1, uint16_t* registerValue2)
+{
+	if ((registerValue1 == NULL) || (registerValue2 == NULL))
+	{
+		return HAL_ERROR;
+	}
+
+	if (modbusMasterStatus != MODBUS_MASTER_RESPONSE_READY)
+	{
+		return HAL_ERROR;
+	}
+
+	*registerValue1 = (uint16_t)(((uint16_t)modbusMasterResponse[3] << 8) | modbusMasterResponse[4]);
+	*registerValue2 = (uint16_t)(((uint16_t)modbusMasterResponse[5] << 8) | modbusMasterResponse[6]);
+	modbusMasterStatus = MODBUS_MASTER_IDLE;
+	modbusRequestStartTick = 0u;
+
+	return HAL_OK;
+}
+
 void modbusMaster_cpltCallBack(UART_HandleTypeDef* huart)
 {
   uint16_t calculatedCrc;
