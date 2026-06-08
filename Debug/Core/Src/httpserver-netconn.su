@@ -1,4 +1,6 @@
-../Core/Src/httpserver-netconn.c:37:12:parse_content_length	24	static
-../Core/Src/httpserver-netconn.c:91:13:http_server_serve	56	static
-../Core/Src/httpserver-netconn.c:230:13:http_server_netconn_thread	32	static
-../Core/Src/httpserver-netconn.c:270:6:http_server_netconn_init	16	static
+../Core/Src/httpserver-netconn.c:38:12:parse_content_length	24	static
+../Core/Src/httpserver-netconn.c:82:20:http_content_type	24	static
+../Core/Src/httpserver-netconn.c:118:13:http_send_static_file	512	static
+../Core/Src/httpserver-netconn.c:192:13:http_server_serve	56	static
+../Core/Src/httpserver-netconn.c:334:13:http_server_netconn_thread	32	static
+../Core/Src/httpserver-netconn.c:374:6:http_server_netconn_init	16	static

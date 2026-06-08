@@ -22,6 +22,7 @@
 #include "network_config_http.h"
 #include "home.h"
 #include "cmsis_os.h"
+#include "lwip/apps/fs.h"
 
 #include <stdio.h>
 
@@ -77,6 +78,106 @@ static const char TEST_PAGE[] =
 "<body style=\"font-family:Arial,sans-serif\"><h1>ETH OK</h1>"
 "<p>If you can read this, the STM32 HTTP server path is working.</p>"
 "</body></html>";
+
+static const char *http_content_type(const char *path)
+{
+  const char *extension = strrchr(path, '.');
+
+  if (extension == NULL)
+  {
+    return "application/octet-stream";
+  }
+  if ((strcmp(extension, ".html") == 0) || (strcmp(extension, ".htm") == 0))
+  {
+    return "text/html; charset=utf-8";
+  }
+  if (strcmp(extension, ".css") == 0)
+  {
+    return "text/css";
+  }
+  if (strcmp(extension, ".js") == 0)
+  {
+    return "application/javascript";
+  }
+  if (strcmp(extension, ".png") == 0)
+  {
+    return "image/png";
+  }
+  if ((strcmp(extension, ".jpg") == 0) || (strcmp(extension, ".jpeg") == 0))
+  {
+    return "image/jpeg";
+  }
+  if (strcmp(extension, ".gif") == 0)
+  {
+    return "image/gif";
+  }
+
+  return "application/octet-stream";
+}
+
+static void http_send_static_file(struct netconn *conn, const char *request)
+{
+  struct fs_file file;
+  char path[256];
+  char header[192];
+  const char *path_start = request + 4;
+  const char *path_end = strchr(path_start, ' ');
+  const char *query;
+  size_t path_len;
+  int header_len;
+
+  if (path_end == NULL)
+  {
+    return;
+  }
+
+  query = memchr(path_start, '?', (size_t)(path_end - path_start));
+  if (query != NULL)
+  {
+    path_end = query;
+  }
+
+  path_len = (size_t)(path_end - path_start);
+  if ((path_len == 0u) || (path_len >= sizeof(path)))
+  {
+    return;
+  }
+
+  memcpy(path, path_start, path_len);
+  path[path_len] = '\0';
+
+  if (fs_open(&file, path) != ERR_OK)
+  {
+    static const char not_found[] =
+      "HTTP/1.1 404 Not Found\r\n"
+      "Content-Type: text/plain\r\n"
+      "Content-Length: 9\r\n"
+      "Connection: close\r\n\r\n"
+      "Not Found";
+    (void)netconn_write(conn, not_found, sizeof(not_found) - 1u, NETCONN_COPY);
+    return;
+  }
+
+  header_len = snprintf(header,
+                        sizeof(header),
+                        "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: %s\r\n"
+                        "Content-Length: %d\r\n"
+                        "Cache-Control: public, max-age=86400\r\n"
+                        "Connection: close\r\n\r\n",
+                        http_content_type(path),
+                        file.len);
+  if ((header_len > 0) && ((size_t)header_len < sizeof(header)))
+  {
+    if (netconn_write(conn, header, (size_t)header_len, NETCONN_COPY) == ERR_OK)
+    {
+      /* fsdata is immutable Flash data, so LwIP can send it without copying. */
+      (void)netconn_write(conn, file.data, (size_t)file.len, NETCONN_NOCOPY);
+    }
+  }
+
+  fs_close(&file);
+}
 
 
 
@@ -201,7 +302,10 @@ static void http_server_serve(struct netconn *conn)
         {
           home_send_page(conn);
         }
-        
+        else
+        {
+          http_send_static_file(conn, g_http_request_buffer);
+        }
       }
     }
   }

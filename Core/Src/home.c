@@ -145,7 +145,9 @@ void home_send_page(struct netconn *conn)
     "@media(max-width:640px){.grid{grid-template-columns:1fr;}.content-body{padding:16px;}}"
     "</style></head><body>"
     "<aside>"
-    "<div class='brand'><h1>HealthSystems</h1><p>Precision Node 04</p></div>"
+    "<div class='brand'>"
+    "<img src='/STM32F4xx_files/Meier.png' style='width:150px;height:auto;'>"
+    "</div>"
     "<nav>"
     "<a class='nav-item active' href='/'><span class='material-symbols-outlined'>home</span>Home</a>"
     "<a class='nav-item' href='/config.html'><span class='material-symbols-outlined'>hub</span>Network</a>"
@@ -208,7 +210,7 @@ void home_send_page(struct netconn *conn)
 
   home_write(conn,
     "</p><div class='muted'>Physical link status from current app config</div></div>"
-    "<div class='card'><h3>System Role</h3><p>MODBUS MASTER</p><div class='muted'>STM32 polling and supervision</div></div></div>"
+    "<div class='card'><h3>System Role</h3><p>MODBUS MASTER</p></div></div>"
     "<p class='muted'>Home hits: ");
 
   home_write_uint(conn, s_home_hits);

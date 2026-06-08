@@ -56,7 +56,10 @@ Core/Src/httpserver-netconn.o: ../Core/Src/httpserver-netconn.c \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/list.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h \
  ../Core/Inc/app_config_http.h ../Core/Inc/network_config_http.h \
- ../Core/Inc/home.h
+ ../Core/Inc/home.h \
+ ../Middlewares/Third_Party/LwIP/src/include/lwip/apps/fs.h \
+ ../Middlewares/Third_Party/LwIP/src/include/lwip/apps/httpd_opts.h \
+ ../Middlewares/Third_Party/LwIP/src/include/lwip/prot/iana.h
 ../Core/Inc/httpserver-netconn.h:
 ../Middlewares/Third_Party/LwIP/src/include/lwip/api.h:
 ../Middlewares/Third_Party/LwIP/src/include/lwip/opt.h:
@@ -117,3 +120,6 @@ Core/Src/httpserver-netconn.o: ../Core/Src/httpserver-netconn.c \
 ../Core/Inc/app_config_http.h:
 ../Core/Inc/network_config_http.h:
 ../Core/Inc/home.h:
+../Middlewares/Third_Party/LwIP/src/include/lwip/apps/fs.h:
+../Middlewares/Third_Party/LwIP/src/include/lwip/apps/httpd_opts.h:
+../Middlewares/Third_Party/LwIP/src/include/lwip/prot/iana.h:
